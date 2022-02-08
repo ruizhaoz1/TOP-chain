@@ -21,7 +21,7 @@ namespace top
             m_account_obj = &parent_obj;
             m_account_obj->add_ref();
             
-            //XMETRICS_GAUGE(metrics::dataobject_xvactplugin_t, 1);
+            //XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xvactplugin_t, 1);
             xinfo("xvactplugin_t::xvactplugin_t,acccount(%s)-type(%d),objectid(%lld)",m_account_obj->get_address().c_str(),get_plugin_type(),get_obj_id());
         }
         
@@ -29,7 +29,7 @@ namespace top
         {
             m_account_obj->release_ref();
             
-            //XMETRICS_GAUGE(metrics::dataobject_xvactplugin_t, -1);
+            //XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xvactplugin_t, -1);
             xinfo("xvactplugin_t::destroy,acccount(%s)-type(%d),objectid(%lld)",m_account_obj->get_address().c_str(),get_plugin_type(),get_obj_id());
         }
         
@@ -42,6 +42,16 @@ namespace top
         {
             xinfo("xvactplugin_t::close,acccount(%s)-type(%d),objectid(%lld)",m_account_obj->get_address().c_str(),get_plugin_type(),get_obj_id());
             return xobject_t::close(force_async);
+        }
+    
+        const xvid_t         xvactplugin_t::get_xvid()    const
+        {
+            return m_account_obj->get_xvid();
+        }
+    
+        const std::string&   xvactplugin_t::get_xvid_str()const
+        {
+            return m_account_obj->get_xvid_str();
         }
         
         const std::string &  xvactplugin_t::get_account_address()  const

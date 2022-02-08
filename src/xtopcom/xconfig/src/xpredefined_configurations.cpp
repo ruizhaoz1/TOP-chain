@@ -87,6 +87,7 @@ XDEFINE_ONCHAIN_GOVERNANCE_PARAMETER(min_auditor_deposit);
 XDEFINE_ONCHAIN_GOVERNANCE_PARAMETER(dividend_ratio_change_interval);
 
 XDEFINE_ONCHAIN_GOVERNANCE_PARAMETER(min_credit);
+XDEFINE_ONCHAIN_GOVERNANCE_PARAMETER(initial_creditscore);
 
 XDEFINE_ONCHAIN_GOVERNANCE_PARAMETER(reward_issue_interval);
 XDEFINE_ONCHAIN_GOVERNANCE_PARAMETER(reward_update_interval);
@@ -181,7 +182,6 @@ XDEFINE_CONFIGURATION(ip);
 /* end of development parameters */
 
 /* end of offchain parameters */
-XDEFINE_CONFIGURATION(platform_first_node);
 XDEFINE_CONFIGURATION(platform_business_port);
 XDEFINE_CONFIGURATION(platform_public_endpoints);
 XDEFINE_CONFIGURATION(platform_show_cmd);

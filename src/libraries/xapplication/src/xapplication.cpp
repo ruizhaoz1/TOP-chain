@@ -13,7 +13,7 @@
 #include "xcertauth/xcertauth_face.h"
 #include "xchain_timer/xchain_timer.h"
 #include "xchain_upgrade/xchain_data_processor.h"
-#include "xchain_upgrade/xchain_upgrade_center.h"
+#include "xchain_fork/xchain_upgrade_center.h"
 #include "xcodec/xmsgpack_codec.hpp"
 #include "xcommon/xip.h"
 #include "xconfig/xpredefined_configurations.h"
@@ -68,9 +68,7 @@ xtop_application::xtop_application(common::xnode_id_t const & node_id, xpublic_k
 #else
     m_cert_ptr.attach(&auth::xauthcontext_t::instance(*m_nodesvr_ptr.get()));
 #endif
-}
-
-void xtop_application::start() {
+    // genesis blocks should init imediately after db created
     if ((m_store == nullptr) || !m_store->open()) {
         xwarn("xtop_application::start db open failed!");
         exit(0);
@@ -87,14 +85,17 @@ void xtop_application::start() {
     contract::xcontract_deploy_t::instance().deploy_sys_contracts();
     contract::xcontract_manager_t::instance().instantiate_sys_contracts();
     contract::xcontract_manager_t::instance().setup_blockchains(m_blockstore.get());
+}
+
+void xtop_application::start() {
     chain_data::xchain_data_processor_t::release();
     // load configuration first
     auto loader = std::make_shared<loader::xconfig_onchain_loader_t>(make_observer(m_store), make_observer(m_bus.get()), make_observer(m_logic_timer));
     config::xconfig_register_t::get_instance().add_loader(loader);
     config::xconfig_register_t::get_instance().load();
 
-    chain_upgrade::xtop_chain_fork_config_center::init();
-    base::xvblock_fork_t::instance().init(chain_upgrade::xtop_chain_fork_config_center::is_block_forked);
+    chain_fork::xtop_chain_fork_config_center::init();
+    base::xvblock_fork_t::instance().init(chain_fork::xtop_chain_fork_config_center::is_block_forked);
 
     m_txpool = xtxpool_v2::xtxpool_instance::create_xtxpool_inst(make_observer(m_store), make_observer(m_blockstore.get()), make_observer(m_cert_ptr.get()), make_observer(m_bus.get()));
 
@@ -389,6 +390,7 @@ int32_t xtop_application::handle_register_node(std::string const & node_addr, st
     // check node_sign to verify node
     utl::xkeyaddress_t xaddr{node_addr};
     uint256_t          hash_value = utl::xsha2_256_t::digest(node_addr);
+    XMETRICS_GAUGE(metrics::cpu_hash_256_handle_register_node_calc, 1);
 
     utl::xecdsasig_t sig{(const uint8_t *)node_sign.data()};
 
@@ -430,7 +432,7 @@ bool xtop_application::is_beacon_account() const noexcept {
         top::common::xnode_id_t node_id = top::common::xnode_id_t{ user_params.account };
 
         std::string result;
-        auto latest_vblock = data::xblocktool_t::get_latest_connectted_light_block(m_blockstore.get(), xvaccount_t{sys_contract_rec_elect_rec_addr});
+        auto latest_vblock = data::xblocktool_t::get_latest_connectted_state_changed_block(m_blockstore.get(), xvaccount_t{sys_contract_rec_elect_rec_addr});
         base::xauto_ptr<base::xvbstate_t> bstate = base::xvchain_t::instance().get_xstatestore()->get_blkstate_store()->get_block_state(latest_vblock.get(), metrics::statestore_access_from_application_isbeacon);
         if (bstate == nullptr) {
             xerror("xtop_application::is_beacon_account fail-get state.");

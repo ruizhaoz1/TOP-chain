@@ -4,6 +4,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "../xvdrecycle.h"
+#include "../xvledger.h"
 
 namespace top
 {
@@ -104,6 +105,7 @@ namespace top
     
         bool  xvdrecycle_mgr::set_block_recycler(xblockrecycler_t& new_recycler)
         {
+            xkinfo("xvdrecycle_mgr::set_block_recycler");
             return set_recycler(new_recycler);
         }
     
@@ -111,6 +113,9 @@ namespace top
         {
             if(m_recycler_switch[target] <= 0) //not turn on
                 return NULL;
+            
+            if(xvchain_t::instance().is_auto_prune_enable() == false)
+                return NULL;//global switch is off
             
             return m_recyclers_obj[target];
         }

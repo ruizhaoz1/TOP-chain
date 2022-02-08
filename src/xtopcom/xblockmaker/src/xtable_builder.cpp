@@ -19,6 +19,7 @@ void make_table_prove_property_hashs(base::xvbstate_t* bstate, std::map<std::str
     std::string property_receiptid_bin = data::xtable_bstate_t::get_receiptid_property_bin(bstate);
     if (!property_receiptid_bin.empty()) {
         uint256_t hash = utl::xsha2_256_t::digest(property_receiptid_bin);
+        XMETRICS_GAUGE(metrics::cpu_hash_256_receiptid_bin_calc, 1);
         std::string prophash = std::string(reinterpret_cast<char*>(hash.data()), hash.size());
         property_hashs[data::xtable_bstate_t::get_receiptid_property_name()] = prophash;
     }
@@ -27,7 +28,8 @@ void make_table_prove_property_hashs(base::xvbstate_t* bstate, std::map<std::str
 void xlighttable_builder_t::make_light_table_binlog(const xobject_ptr_t<base::xvbstate_t> & proposal_bstate,
                                                            const std::vector<xblock_ptr_t> & units,
                                                            std::string & property_binlog,
-                                                           std::map<std::string, std::string> & property_hashs) {
+                                                           std::map<std::string, std::string> & property_hashs,
+                                                           const std::vector<xlightunit_tx_info_ptr_t> & txs_info) {
     xobject_ptr_t<base::xvcanvas_t> canvas = make_object_ptr<base::xvcanvas_t>();
 
     data::xtable_bstate_t proposal_tbstate(proposal_bstate.get());
@@ -64,7 +66,7 @@ void xlighttable_builder_t::make_light_table_binlog(const xobject_ptr_t<base::xv
 
     // make receiptid property binlog
     base::xreceiptid_check_t receiptid_check;
-    xblock_t::batch_units_to_receiptids(units, receiptid_check);  // units make changed receiptids
+    xblock_t::txs_to_receiptids(txs_info, receiptid_check);
 
     base::xreceiptid_pairs_ptr_t modified_pairs = std::make_shared<base::xreceiptid_pairs_t>();
 
@@ -131,9 +133,10 @@ xblock_ptr_t        xlighttable_builder_t::build_block(const xblock_ptr_t & prev
     base::xauto_ptr<base::xvheader_t> _temp_header = base::xvblockbuild_t::build_proposal_header(prev_block.get(), cs_para.get_clock());
     xobject_ptr_t<base::xvbstate_t> proposal_bstate = make_object_ptr<base::xvbstate_t>(*_temp_header.get(), *prev_bstate.get());
 
+    auto & txs_info = build_para->get_txs();
     std::map<std::string, std::string> property_hashs;  // need put in table self action for prove
     std::string property_binlog;
-    make_light_table_binlog(proposal_bstate, lighttable_build_para->get_batch_units(), property_binlog, property_hashs);
+    make_light_table_binlog(proposal_bstate, lighttable_build_para->get_batch_units(), property_binlog, property_hashs, txs_info);
     xtable_block_para_t lighttable_para;
     lighttable_para.set_property_binlog(property_binlog);
     lighttable_para.set_batch_units(lighttable_build_para->get_batch_units());
@@ -143,6 +146,7 @@ xblock_ptr_t        xlighttable_builder_t::build_block(const xblock_ptr_t & prev
     proposal_bstate->take_snapshot(fullstate_bin);
     lighttable_para.set_fullstate_bin(fullstate_bin);
     lighttable_para.set_property_hashs(property_hashs);
+    lighttable_para.set_txs(txs_info);
 
     base::xvblock_t* _proposal_block = data::xblocktool_t::create_next_tableblock(lighttable_para, prev_block.get(), cs_para);
     xblock_ptr_t proposal_table;
@@ -217,5 +221,14 @@ xstatistics_data_t xfulltable_builder_t::make_block_statistics(const std::vector
     return _statistics_data;
 }
 
+xblock_ptr_t        xemptytable_builder_t::build_block(const xblock_ptr_t & prev_block,
+                                                    const xobject_ptr_t<base::xvbstate_t> & prev_bstate,
+                                                    const data::xblock_consensus_para_t & cs_para,
+                                                    xblock_builder_para_ptr_t & build_para) {
+    base::xvblock_t* _proposal_block = data::xblocktool_t::create_next_emptyblock(prev_block.get(), cs_para);
+    xblock_ptr_t proposal_table;
+    proposal_table.attach((data::xblock_t*)_proposal_block);
+    return proposal_table;
+}
 
 NS_END2

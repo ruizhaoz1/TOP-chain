@@ -59,6 +59,14 @@ enum E_SIMPLE_METRICS_TAG : size_t {
     dataobject_xvinput,
     dataobject_xvoutput,
     dataobject_xventity,
+    dataobject_xvnode_t,
+    dataobject_xvexestate_t,
+    dataobject_xvnodegroup,
+    dataobject_xcscoreobj_t,
+    dataobject_xblock_maker_t,
+    dataobject_xblockacct_t,
+    dataobject_xtxpool_table_info_t,    
+    dataobject_xacctmeta_t,
     // db bock key, see xvdbkey for specific info
     // 't/', 'i/', 'b/'
     // 'b/.../h', 'b/.../i', 'b/.../ir', 'b/.../o', 'b/.../or', 'b/.../s', 'b/.../d'
@@ -140,7 +148,6 @@ enum E_SIMPLE_METRICS_TAG : size_t {
     cons_table_leader_make_unit_count,
     cons_table_total_process_tx_count,
     cons_table_total_process_unit_count,
-    cons_sync_on_demand_unit,
 
     cons_packtx_succ,
     cons_packtx_sendtx_succ,
@@ -154,6 +161,10 @@ enum E_SIMPLE_METRICS_TAG : size_t {
     cons_packtx_fail_nonce_contious,
     cons_packtx_fail_transfer_limit, // TODO(jimmy) need delete limit
     cons_packtx_fail_load_origintx,
+
+    clock_aggregate_height,
+    clock_leader_broadcast_height,
+    clock_received_height,
 
     // store
     store_state_read,
@@ -193,16 +204,6 @@ enum E_SIMPLE_METRICS_TAG : size_t {
     store_dbsize_block_table_light,
     store_dbsize_block_table_full,
     store_dbsize_block_other,
-
-    // vledger dataobject
-    dataobject_xvnode_t,
-    dataobject_xvexestate_t,
-    dataobject_xvnodegroup,
-    dataobject_xcscoreobj_t,
-    dataobject_xblock_maker_t,
-    dataobject_xblockacct_t,
-    dataobject_xtxpool_table_info_t,
-    dataobject_xacctmeta_t,
 
     // message category
     message_category_begin_contains_duplicate,
@@ -307,6 +308,8 @@ enum E_SIMPLE_METRICS_TAG : size_t {
     xsync_recv_get_blocks_by_hashes_bytes,
     xsync_store_block_units,
     xsync_store_block_tables,
+    xsync_unit_proof_sync_req_send,
+    xsync_unit_proof_sync_req_recv,
 
 
     // txpool
@@ -343,7 +346,8 @@ enum E_SIMPLE_METRICS_TAG : size_t {
     txpool_receipt_recv_num_7to12_clock,
     txpool_receipt_recv_num_13to30_clock,
     txpool_receipt_recv_num_exceed_30_clock,
-    txpool_push_send_fail_queue_limit,
+    txpool_push_send_fail_table_limit,
+    txpool_push_send_fail_role_limit,
     txpool_push_send_fail_repeat,
     txpool_push_send_fail_unconfirm_limit,
     txpool_push_send_fail_nonce_limit,
@@ -351,6 +355,7 @@ enum E_SIMPLE_METRICS_TAG : size_t {
     txpool_push_send_fail_account_not_in_charge,
     txpool_push_send_fail_nonce_expired,
     txpool_push_send_fail_nonce_duplicate,
+    txpool_push_send_fail_replaced,
     txpool_push_send_fail_other,
     txpool_send_tx_timeout,
     txpool_tx_delay_from_push_to_pack_send,
@@ -413,6 +418,7 @@ enum E_SIMPLE_METRICS_TAG : size_t {
     blockstore_access_from_txpool_begin,
     blockstore_access_from_txpool_on_block_event = blockstore_access_from_txpool_begin,
     blockstore_access_from_txpool_id_state,
+    blockstore_access_from_txpool_get_nonce,
     blockstore_access_from_txpool_refresh_table,
     blockstore_access_from_txpool_create_receipt,
     blockstore_access_from_txpool_pull_lacking_receipts,
@@ -624,6 +630,20 @@ enum E_SIMPLE_METRICS_TAG : size_t {
     cpu_ca_verify_multi_sign_xbft,
     cpu_ca_verify_multi_sign_tc,
     cpu_ca_verify_multi_sign_blockstore,
+    cpu_merkle_hash_calc,
+    cpu_hash_256_xecprikey_calc,
+    cpu_hash_256_XudpSocket_calc,
+    cpu_hash_256_GetRootKadmliaKey_calc,
+    cpu_hash_256_handle_register_node_calc,
+    cpu_hash_256_xtransaction_v1_calc,
+    cpu_hash_256_xtransaction_v2_calc,
+    cpu_hash_256_receiptid_bin_calc,
+    cpu_hash_256_xvproperty_prove_t_leafs_calc,
+    cpu_hash_256_xvproperty_property_bin_calc,
+    cpu_hash_256_xhashplugin_t_calc,
+
+    //bft
+    bft_verify_vote_msg_fail,
 
     e_simple_total,
 };
@@ -868,9 +888,16 @@ public:
     top::metrics::handler::metrics_pack_unit STR_CONCAT(packet_info_auto_, __LINE__){metrics_name, "alarm"};                                                                   \
     top::metrics::handler::metrics_packet_impl(STR_CONCAT(packet_info_auto_, __LINE__), __VA_ARGS__);
 
+
 #define XMETRICS_GAUGE(TAG, value) top::metrics::e_metrics::get_instance().gauge(TAG, value)
 #define XMETRICS_GAUGE_SET_VALUE(TAG, value) top::metrics::e_metrics::get_instance().gauge_set_value(TAG, value)
 #define XMETRICS_GAUGE_GET_VALUE(TAG) top::metrics::e_metrics::get_instance().gauge_get_value(TAG)
+
+#ifndef ENABLE_METRICS_DATAOBJECT                                                                             
+    #define XMETRICS_GAUGE_DATAOBJECT(TAG, value)
+#else
+    #define XMETRICS_GAUGE_DATAOBJECT(TAG, value)   XMETRICS_GAUGE(TAG, value) 
+#endif
 
 class simple_metrics_tickcounter {
 public:
@@ -919,6 +946,7 @@ private:
 #define XMETRICS_PACKET_INFO(metrics_name, ...)
 #define XMETRICS_PACKET_ALARM(metrics_name, ...)
 #define XMETRICS_GAUGE(TAG, value)
+#define XMETRICS_GAUGE_DATAOBJECT(TAG, value)
 #define XMETRICS_GAUGE_SET_VALUE(TAG, value)
 #define XMETRICS_GAUGE_GET_VALUE(TAG)
 #define XMETRICS_ARRCNT_INCR(metrics_name, index, value)

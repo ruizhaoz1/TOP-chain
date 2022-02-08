@@ -120,8 +120,41 @@ bool xdb_mem_t::batch_change(const std::map<std::string, std::string>& objs, con
     return true;
 }
 
-xdb_transaction_t* xdb_mem_t::begin_transaction() {
-    return new xdb_memdb_transaction_t(this);
+//prefix must start from first char of key
+bool xdb_mem_t::read_range(const std::string& prefix, std::vector<std::string>& values)
+{
+    xassert(0);
+    return false;
+}
+//note:begin_key and end_key must has same style(first char of key)
+bool xdb_mem_t::delete_range(const std::string& begin_key,const std::string& end_key)
+{
+    xassert(0);
+    return false;
+}
+
+//key must be readonly(never update after PUT),otherwise the behavior is undefined
+bool xdb_mem_t::single_delete(const std::string& key)
+{
+    return erase(key);
+}
+
+//iterator each key of prefix.note: go throuh whole db if prefix is empty
+bool xdb_mem_t::read_range(const std::string& prefix,xdb_iterator_callback callback,void * cookie)
+{
+    return false;
+}
+
+//compact whole DB if both begin_key and end_key are empty
+//note: begin_key and end_key must be at same CF while XDB configed by multiple CFs
+bool xdb_mem_t::compact_range(const std::string & begin_key,const std::string & end_key)
+{
+    return false;
+}
+
+bool xdb_mem_t::get_estimate_num_keys(uint64_t & num) const
+{
+    return false;
 }
 
 bool xdb_memdb_transaction_t::rollback() {

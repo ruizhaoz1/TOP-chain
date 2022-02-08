@@ -21,9 +21,11 @@ constexpr uint64_t TOTAL_ISSUANCE = 200 * 1e8 * TOP_UNIT;
 #define TOP_MAX_LENGTH 12 // enough for 20,000,000,000 tokens
 
 #ifdef _WIN32
-#define DB_PATH "\\db_v2"
+#define OLD_DB_PATH "\\db_v2"
+#define DB_PATH "\\db_v3"
 #else
-#define DB_PATH "/db_v2"
+#define OLD_DB_PATH "/db_v2"
+#define DB_PATH "/db_v3"
 #endif
 
 NS_BEG2(top, config)
@@ -151,7 +153,7 @@ XDECLARE_ONCHAIN_GOVERNANCE_PARAMETER(min_validator_group_size, xgroup_size_t, n
 XDECLARE_ONCHAIN_GOVERNANCE_PARAMETER(max_validator_group_size, xgroup_size_t, normal, 128, 64, 512);
 #endif
 
-#if defined(XBUILD_DEV) || defined(XBULLD_CI)
+#if defined(XBUILD_DEV) || defined(XBUILD_CI)
 XDECLARE_ONCHAIN_GOVERNANCE_PARAMETER(min_election_committee_size, xgroup_size_t, normal, 6, 6, 32);
 XDECLARE_ONCHAIN_GOVERNANCE_PARAMETER(max_election_committee_size, xgroup_size_t, normal, 8, 8, 512);
 #elif defined(XBUILD_GALILEO)
@@ -267,6 +269,7 @@ XDECLARE_ONCHAIN_GOVERNANCE_PARAMETER(backward_auditor_slash_credit, std::uint64
 XDECLARE_ONCHAIN_GOVERNANCE_PARAMETER(sign_block_reward_threshold_value, std::uint32_t, normal, 80, 0, 100);           // award node persent
 XDECLARE_ONCHAIN_GOVERNANCE_PARAMETER(sign_block_ranking_reward_threshold_value, std::uint32_t, normal, 0, 0, 100);    // award node vote
 XDECLARE_ONCHAIN_GOVERNANCE_PARAMETER(sign_block_publishment_threshold_value, std::uint32_t, normal, 0, 0, 100);
+XDECLARE_ONCHAIN_GOVERNANCE_PARAMETER(initial_creditscore, std::uint64_t, normal, 330000, 100000, 1000000);           // currently 0.33
 #ifdef SLASH_TEST
 XDECLARE_ONCHAIN_GOVERNANCE_PARAMETER(punish_collection_interval, xinterval_t, normal, 30, 0, std::numeric_limits<xinterval_t>::max());
 XDECLARE_ONCHAIN_GOVERNANCE_PARAMETER(punish_interval_time_block, xinterval_t, normal, 30, 0, std::numeric_limits<xinterval_t>::max());
@@ -299,7 +302,7 @@ XDECLARE_ONCHAIN_GOVERNANCE_PARAMETER(tcc_proposal_expire_time, std::uint32_t, n
 XDECLARE_ONCHAIN_GOVERNANCE_PARAMETER(tcc_member, char const *, critical, "", "", "");
 
 // whitelist
-#if defined(XBUILD_CI) || defined(XBUILD_DEV) || defined(XBUILD_GALILEO)
+#if defined(XBUILD_CI) || defined(XBUILD_DEV) || defined(XBUILD_GALILEO) || defined(XBUILD_BOUNTY)
 XDECLARE_ONCHAIN_GOVERNANCE_PARAMETER(toggle_whitelist, bool, normal, false, false, true); // testnets defaults to close
 #else
 XDECLARE_ONCHAIN_GOVERNANCE_PARAMETER(toggle_whitelist, bool, normal, true, false, true); // mainnet defaults to open
@@ -450,7 +453,6 @@ XDECLARE_CONFIGURATION(platform_url_endpoints, char const *, "http://mainnet.see
 XDECLARE_CONFIGURATION(root_hash, char const *, "beaa468a921c7cb0344da5b56fcf79ccdbcddb3226a1c042a1020be6d3fc29f2");
 #endif
 
-XDECLARE_CONFIGURATION(platform_first_node, bool, false);
 XDECLARE_CONFIGURATION(platform_business_port, std::uint16_t, 9000);
 XDECLARE_CONFIGURATION(platform_show_cmd, bool, false);
 XDECLARE_CONFIGURATION(platform_db_path, char const *, "/chain/db_v2/pdb");

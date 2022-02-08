@@ -19,10 +19,61 @@ namespace top
     namespace base
     {
         //////////////////////////////////xvblock and related implementation /////////////////////////////
+        int32_t xvheader_extra::serialize_to_string(std::string & str) const {
+            base::xstream_t _stream(base::xcontext_t::instance());
+            auto size = do_write(_stream);
+            str.clear();
+            str.assign((const char*)_stream.data(), _stream.size());
+            return str.size();
+        }
+
+        int32_t xvheader_extra::do_write(base::xstream_t & stream) const {
+            const int32_t begin_size = stream.size();
+            stream << static_cast<uint32_t>(m_map.size());
+            for (auto pair : m_map) {
+                stream.write_compact_var(pair.first);
+                stream.write_compact_var(pair.second);
+            }
+            return (stream.size() - begin_size);
+        }
+
+        int32_t xvheader_extra::serialize_from_string(const std::string & _data) {
+            base::xstream_t _stream(base::xcontext_t::instance(),(uint8_t*)_data.data(),(uint32_t)_data.size());
+            const int result = do_read(_stream);
+            return result;
+        }
+
+        int32_t xvheader_extra::do_read(base::xstream_t & stream) {
+            const int32_t begin_size = stream.size();
+            uint32_t size;
+            stream >> size;
+            for (uint32_t i = 0; i < size; ++i) {
+                std::string key;
+                std::string val;
+                stream.read_compact_var(key);
+                stream.read_compact_var(val);
+                m_map[key] = val;
+            }
+            return (begin_size - stream.size());
+        }
+
+        void xvheader_extra::insert(const std::string & key, const std::string & val) {
+            m_map[key] = val;
+        }
+
+        std::string xvheader_extra::get_val(const std::string & key) const {
+            auto it = m_map.find(key);
+            if (it != m_map.end()) {
+                return it->second;
+            } else {
+                return "";
+            }
+        }
+
         xvheader_t::xvheader_t()  //just use when seralized from db/store
             :xobject_t(enum_xobject_type_vheader)
         {
-            XMETRICS_GAUGE(metrics::dataobject_xvheader, 1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xvheader, 1);
             m_types     = 0;
             m_versions  = 1 << 8;//[8:features][8:major][8:minor][8:patch]
             m_chainid   = 0;
@@ -34,7 +85,7 @@ namespace top
         xvheader_t::xvheader_t(const std::string & intput_hash,const std::string & output_hash)
             :xobject_t(enum_xobject_type_vheader)
         {
-            XMETRICS_GAUGE(metrics::dataobject_xvheader, 1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xvheader, 1);
             m_types     = 0;
             m_versions  = 1 << 8;//[8:features][8:major][8:minor][8:patch]
             m_chainid   = 0;
@@ -48,7 +99,7 @@ namespace top
         
         xvheader_t::~xvheader_t()
         {
-            XMETRICS_GAUGE(metrics::dataobject_xvheader, -1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xvheader, -1);
         }
         
         xvheader_t::xvheader_t(const xvheader_t & other)
@@ -274,7 +325,7 @@ namespace top
         xvqcert_t::xvqcert_t()
         : xdataunit_t((enum_xdata_type)enum_xobject_type_vqccert)
         {
-            XMETRICS_GAUGE(metrics::dataobject_xvqcert, 1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xvqcert, 1);
             m_viewid    = 0;
             m_view_token= 0;
             m_clock     = 0;
@@ -300,7 +351,7 @@ namespace top
         xvqcert_t::xvqcert_t(const std::string header_hash,enum_xdata_type type)
         : xdataunit_t(type)
         {
-            XMETRICS_GAUGE(metrics::dataobject_xvqcert, 1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xvqcert, 1);
             m_viewid    = 0;
             m_view_token= 0;
             m_clock     = 0;
@@ -328,7 +379,7 @@ namespace top
         xvqcert_t::xvqcert_t(const xvqcert_t & other,enum_xdata_type type)
         : xdataunit_t(type)
         {
-            XMETRICS_GAUGE(metrics::dataobject_xvqcert, 1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xvqcert, 1);
             m_viewid    = 0;
             m_view_token= 0;
             m_clock     = 0;
@@ -354,7 +405,7 @@ namespace top
         }
         xvqcert_t::~xvqcert_t()
         {
-            XMETRICS_GAUGE(metrics::dataobject_xvqcert, -1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xvqcert, -1);
         }
         
         xvqcert_t & xvqcert_t::operator = (const xvqcert_t & other)
@@ -1136,30 +1187,30 @@ namespace top
         xvinput_t::xvinput_t(enum_xobject_type type)
             :xvexemodule_t(type)
         {
-            XMETRICS_GAUGE(metrics::dataobject_xvinput, 1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xvinput, 1);
         }
         
         xvinput_t::xvinput_t(const std::vector<xventity_t*> & entitys,const std::string & raw_resource_data,enum_xobject_type type)
             :xvexemodule_t(entitys,raw_resource_data,type)
         {
-            XMETRICS_GAUGE(metrics::dataobject_xvinput, 1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xvinput, 1);
         }
     
         xvinput_t::xvinput_t(std::vector<xventity_t*> && entitys,xstrmap_t & resource_obj,enum_xobject_type type)
             :xvexemodule_t(entitys,resource_obj,type)
         {
-            XMETRICS_GAUGE(metrics::dataobject_xvinput, 1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xvinput, 1);
         }
     
         xvinput_t::xvinput_t(const std::vector<xventity_t*> & entitys,xstrmap_t & resource_obj, enum_xobject_type type)
             :xvexemodule_t(entitys,resource_obj,type)
         {
-            XMETRICS_GAUGE(metrics::dataobject_xvinput, 1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xvinput, 1);
         }
     
         xvinput_t::~xvinput_t()
         {
-            XMETRICS_GAUGE(metrics::dataobject_xvinput, -1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xvinput, -1);
         }
     
         void*   xvinput_t::query_interface(const int32_t _enum_xobject_type_)//caller need to cast (void*) to related ptr
@@ -1203,30 +1254,30 @@ namespace top
         xvoutput_t::xvoutput_t(enum_xobject_type type)
             :xvexemodule_t(type)
         {
-            XMETRICS_GAUGE(metrics::dataobject_xvoutput, 1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xvoutput, 1);
         }
     
         xvoutput_t::xvoutput_t(std::vector<xventity_t*> && entitys,enum_xobject_type type)
             :xvexemodule_t(entitys, std::string(),type)
         {
-            XMETRICS_GAUGE(metrics::dataobject_xvoutput, 1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xvoutput, 1);
         }
        
         xvoutput_t::xvoutput_t(const std::vector<xventity_t*> & entitys,const std::string & raw_resource_data, enum_xobject_type type)
             :xvexemodule_t(entitys, raw_resource_data,type)
         {
-            XMETRICS_GAUGE(metrics::dataobject_xvoutput, 1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xvoutput, 1);
         }
     
         xvoutput_t::xvoutput_t(const std::vector<xventity_t*> & entitys,xstrmap_t & resource_obj, enum_xobject_type type)//xvqcert_t used for genreate hash for resource
             :xvexemodule_t(entitys,resource_obj,type)
         {
-            XMETRICS_GAUGE(metrics::dataobject_xvoutput, 1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xvoutput, 1);
         }
     
         xvoutput_t::~xvoutput_t()
         {
-            XMETRICS_GAUGE(metrics::dataobject_xvoutput, -1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xvoutput, -1);
         }
         
         void*   xvoutput_t::query_interface(const int32_t _enum_xobject_type_)//caller need to cast (void*) to related ptr
@@ -1309,7 +1360,7 @@ namespace top
         xvblock_t::xvblock_t()
         : xdataobj_t((enum_xdata_type)enum_xobject_type_vblock)
         {
-            XMETRICS_GAUGE(metrics::dataobject_xvblock, 1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xvblock, 1);
             m_next_next_viewid = 0;
             m_next_next_qcert  = NULL;
             m_prev_block   = NULL;
@@ -1326,7 +1377,7 @@ namespace top
         xvblock_t::xvblock_t(enum_xdata_type type)
         : xdataobj_t(type)
         {
-            XMETRICS_GAUGE(metrics::dataobject_xvblock, 1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xvblock, 1);
             m_next_next_viewid = 0;
             m_next_next_qcert  = NULL;
             m_prev_block   = NULL;
@@ -1481,7 +1532,7 @@ namespace top
         xvblock_t::xvblock_t(xvheader_t & _vheader,xvqcert_t & _vcert,xvinput_t * _vinput,xvoutput_t * _voutput,enum_xdata_type type)
         : xdataobj_t(type)
         {
-            XMETRICS_GAUGE(metrics::dataobject_xvblock, 1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xvblock, 1);
             m_next_next_viewid = 0;
             m_next_next_qcert  = NULL;
             m_prev_block   = NULL;
@@ -1537,7 +1588,7 @@ namespace top
         xvblock_t::xvblock_t(const xvblock_t & other,enum_xdata_type type)
         : xdataobj_t(type)
         {
-            XMETRICS_GAUGE(metrics::dataobject_xvblock, 1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xvblock, 1);
             m_next_next_viewid  = 0;
             
             m_next_next_qcert  = NULL;
@@ -1602,7 +1653,7 @@ namespace top
         
         xvblock_t::~xvblock_t()
         {
-            XMETRICS_GAUGE(metrics::dataobject_xvblock, -1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xvblock, -1);
             if(m_vheader_ptr != NULL){
                 m_vheader_ptr->close();
                 m_vheader_ptr->release_ref();
@@ -1638,7 +1689,7 @@ namespace top
             
 #ifdef DEBUG 
             char local_param_buf[512];
-        xprintf(local_param_buf,sizeof(local_param_buf),"{xvblock:account=%s,height=%" PRIu64 ",viewid=%" PRIu64 ",viewtoken=%u,class=%d,clock=%" PRIu64 ",flags=0x%x,validator=0x%" PRIx64 " : %" PRIx64 ",auditor=0x%" PRIx64 " : %" PRIx64 ",refcount=%d,this=%" PRIx64 ",block_hash=%s -> last_block=%s}",get_account().c_str(),get_height(),get_viewid(),get_viewtoken(),get_block_class(),get_clock(),get_block_flags(),get_cert()->get_validator().high_addr,get_cert()->get_validator().low_addr,get_cert()->get_auditor().high_addr,get_cert()->get_auditor().low_addr,get_refcount(),(uint64_t)this, xstring_utl::to_hex(m_cert_hash).c_str(),xstring_utl::to_hex(get_last_block_hash()).c_str());
+        xprintf(local_param_buf,sizeof(local_param_buf),"{xvblock:account=%s,height=%" PRIu64 ",viewid=%" PRIu64 ",viewtoken=%u,class=%d,clock=%" PRIu64 ",flags=0x%x,validator=0x%" PRIx64 " : %" PRIx64 ",auditor=0x%" PRIx64 " : %" PRIx64 ",refcount=%d,this=%" PRIx64 ",block_version:%u,block_hash=%s -> last_block=%s}",get_account().c_str(),get_height(),get_viewid(),get_viewtoken(),get_block_class(),get_clock(),get_block_flags(),get_cert()->get_validator().high_addr,get_cert()->get_validator().low_addr,get_cert()->get_auditor().high_addr,get_cert()->get_auditor().low_addr,get_refcount(),(uint64_t)this,get_block_version(),xstring_utl::to_hex(m_cert_hash).c_str(),xstring_utl::to_hex(get_last_block_hash()).c_str());
             
 #else
             if(check_block_flag(enum_xvblock_flag_authenticated) && (false == m_dump_info.empty()) )
@@ -1686,6 +1737,23 @@ namespace top
 #else
             return {};
 #endif
+        }
+    
+        xauto_ptr<xvblock_t> xvblock_t::clone_block() const
+        {
+            xobject_t* object = xcontext_t::create_xobject((enum_xobject_type)get_obj_type());
+            xassert(object != NULL);
+            if(object != NULL)
+            {
+                xvblock_t * block_obj = (xvblock_t*)object->query_interface(enum_xobject_type_vblock);
+                xassert(block_obj != NULL);
+                if(block_obj != NULL)
+                {
+                    *block_obj = *this;
+                    return block_obj; //transfer ownership to xauto_ptr
+                }
+            }
+            return nullptr;
         }
         
         bool  xvblock_t::close(bool force_async)  //close and release this node only
@@ -2162,11 +2230,12 @@ namespace top
                     return false;
                 }
  
-                const std::string cert_hash = get_cert()->build_block_hash();
-                if(cert_hash != m_cert_hash)
-                {
-                    xerror("xvblock_t::is_valid,hash of cert not match,cert_hash=%s vs m_cert_hash(%s)",cert_hash.c_str(), m_cert_hash.c_str());
-                    return false;
+                if(deep_test){
+                    const std::string cert_hash = get_cert()->build_block_hash();
+                    if(cert_hash != m_cert_hash) {
+                        xerror("xvblock_t::is_valid,hash of cert not match,cert_hash=%s vs m_cert_hash(%s)",cert_hash.c_str(), m_cert_hash.c_str());
+                        return false;
+                    }
                 }
                 
                 //genesis block dont need verify certification
@@ -2334,15 +2403,17 @@ namespace top
                 xassert(qcert_ptr != NULL); //should has value
                 if(qcert_ptr != NULL)
                 {
-                    const std::string vcert_hash = qcert_ptr->hash(vqcert_bin);
-                    if( (m_cert_hash.empty() == false) && (vcert_hash != m_cert_hash) ) //test match
-                    {
-                        xerror("xvblock_t::do_read, vqcert not match with stored hash, vcert_hash:%s but ask %s",vcert_hash.c_str(),m_cert_hash.c_str());
-                    }
-                    else
-                    {
-                        m_vqcert_ptr = qcert_ptr;
-                    }
+                    #if DEBUG
+                        const std::string vcert_hash = qcert_ptr->hash(vqcert_bin);
+                        if( (m_cert_hash.empty() == false) && (vcert_hash != m_cert_hash) ) //test match
+                        {
+                            xerror("xvblock_t::do_read, vqcert not match with stored hash, vcert_hash:%s but ask %s",vcert_hash.c_str(),m_cert_hash.c_str());
+                        }   
+                        else
+                    #endif
+                        {
+                            m_vqcert_ptr = qcert_ptr;
+                        }
                 }
             }
             if(NULL == m_vqcert_ptr) {

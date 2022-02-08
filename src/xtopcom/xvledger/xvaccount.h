@@ -531,22 +531,23 @@ namespace top
             uint16_t        m_account_flag;  // [enum_xvblock_class 3bit][enum_xvblock_type 7bit][enum_xaccount_index_flag 4bit][enum_xblock_consensus_type 2bit] = 16bits
         };
     
-        class xvactmeta_t : public xdataobj_t,public xblockmeta_t,public xstatemeta_t,public xindxmeta_t,public xsyncmeta_t
+        class xvactmeta_t : public xdataobj_t,protected xblockmeta_t,protected xstatemeta_t,protected xindxmeta_t,protected xsyncmeta_t
         {
             friend class xvaccountobj_t;
             enum {enum_obj_type = xdataunit_t::enum_xdata_type_vaccountmeta};
         public:
-            xvactmeta_t(xvaccount_t & _account);
+            xvactmeta_t(const xvaccount_t & _account);
             xvactmeta_t(const xvactmeta_t & obj);
             virtual ~xvactmeta_t();
             
         protected:
             xvactmeta_t(xvactmeta_t && move);
             xvactmeta_t & operator = (const xvactmeta_t & obj);
+        public:
+            virtual int32_t     serialize_from(xstream_t & stream) override;
             
         public:
             static xvactmeta_t* load(xvaccount_t & _account,const std::string & meta_serialized_data);
-            static const std::string  get_meta_path(xvaccount_t & _account);
             
             const xblockmeta_t   clone_block_meta() const;
             const xstatemeta_t   clone_state_meta() const;
@@ -570,6 +571,8 @@ namespace top
             xsyncmeta_t  &  get_sync_meta();
             
             void    update_meta_process_id(const uint16_t _process_id);
+            void    init_version_control();
+
         protected:
             //not safe for multiple threads
             virtual int32_t   do_write(xstream_t & stream) override; //serialize whole object to binary

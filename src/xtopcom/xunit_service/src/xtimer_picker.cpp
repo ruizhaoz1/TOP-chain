@@ -52,7 +52,18 @@ xtimer_picker_t::~xtimer_picker_t() {
     xunit_info("xtimer_picker_t::~xtimer_picker_t,destroy,this=%p", this);
 }
 
+bool xtimer_picker_t::set_fade_xip_addr(const xvip2_t & new_addr) {
+    xdbg("xtimer_picker_t::set_fade_xip_addr set fade xip from %s to %s", xcons_utl::xip_to_hex(m_faded_xip2).c_str(), xcons_utl::xip_to_hex(new_addr).c_str());
+    m_faded_xip2 = new_addr;
+    return true;
+}
+
 bool xtimer_picker_t::on_view_fire(const base::xvevent_t & event, xconsensus::xcsobject_t * from_parent, const int32_t cur_thread_id, const uint64_t timenow_ms) {
+    if (xcons_utl::xip_equals(m_faded_xip2, get_xip2_addr())) {
+        xdbg_info("xtimer_picker_t::on_view_fire local_xip equal m_fade_xip2 %s . fade round should not make proposal", xcons_utl::xip_to_hex(m_faded_xip2).c_str());
+        return false;
+    }
+
     auto const & view_event = (xconsensus::xcsview_fire const &)event;
     if(m_cur_view < view_event.get_viewid()) {
         m_cur_view = view_event.get_viewid();
@@ -141,8 +152,9 @@ bool  xtimer_picker_t::on_time_cert_event(const base::xvevent_t & event,xcsobjec
     if (xcons_utl::xip_equals(leader_xip, local_xip)) {
         auto    network_proxy = m_params->get_resources()->get_network();
         if (network_proxy != nullptr) {
-            xunit_dbg("[timer_picker::on_time_cert_event] sendout on_time_cert_event src %" PRIx64 ".%" PRIx64 " dst %" PRIx64 ".%" PRIx64, get_xip2_addr().low_addr, get_xip2_addr().high_addr, to_addr.low_addr, to_addr.high_addr);
+            xunit_info("[timer_picker::on_time_cert_event] sendout on_time_cert_event src %" PRIx64 ".%" PRIx64 " dst %" PRIx64 ".%" PRIx64, get_xip2_addr().low_addr, get_xip2_addr().high_addr, to_addr.low_addr, to_addr.high_addr);
             network_proxy->send_out(contract::xmessage_block_broadcast_id, local_xip, to_addr, tc_block);
+            XMETRICS_GAUGE_SET_VALUE(metrics::clock_leader_broadcast_height, tc_block->get_height());
         }
     }
 
@@ -218,13 +230,10 @@ bool xtimer_picker_t::on_proposal_finish(const base::xvevent_t & event, xcsobjec
 
 #ifdef ENABLE_METRICS
         if (is_leader) {
-            XMETRICS_GAUGE(metrics::cons_drand_leader_finish_succ, 1);
             XMETRICS_GAUGE(metrics::cons_drand_leader_succ, 1);
         } else {
-            XMETRICS_GAUGE(metrics::cons_drand_backup_finish_succ, 1);
             XMETRICS_GAUGE(metrics::cons_drand_backup_succ, 1);
         }
-        
         XMETRICS_COUNTER_SET("cons_drand_highqc_height", high_qc->get_height());
         XMETRICS_COUNTER_SET("cons_drand_highqc_viewid", high_qc->get_viewid());
 #endif
@@ -242,10 +251,8 @@ bool xtimer_picker_t::on_proposal_finish(const base::xvevent_t & event, xcsobjec
     } else {
 #ifdef ENABLE_METRICS
         if (is_leader) {
-            XMETRICS_GAUGE(metrics::cons_drand_leader_finish_fail, 1);
             XMETRICS_GAUGE(metrics::cons_drand_leader_succ, 0);
         } else {
-            XMETRICS_GAUGE(metrics::cons_drand_backup_finish_fail, 1);
             XMETRICS_GAUGE(metrics::cons_drand_backup_succ, 0);
         }
 #endif

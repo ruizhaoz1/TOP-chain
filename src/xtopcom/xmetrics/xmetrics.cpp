@@ -45,6 +45,15 @@ char const * matrics_name(xmetrics_tag_t const tag) noexcept {
         RETURN_METRICS_NAME(dataobject_xvinput);
         RETURN_METRICS_NAME(dataobject_xvoutput);
         RETURN_METRICS_NAME(dataobject_xventity);
+        // vledger dataobject
+        RETURN_METRICS_NAME(dataobject_xvnode_t);
+        RETURN_METRICS_NAME(dataobject_xvexestate_t);
+        RETURN_METRICS_NAME(dataobject_xvnodegroup);
+        RETURN_METRICS_NAME(dataobject_xcscoreobj_t);
+        RETURN_METRICS_NAME(dataobject_xblock_maker_t);
+        RETURN_METRICS_NAME(dataobject_xblockacct_t);
+        RETURN_METRICS_NAME(dataobject_xtxpool_table_info_t);
+        RETURN_METRICS_NAME(dataobject_xacctmeta_t);
 
         // dbkeys
         RETURN_METRICS_NAME(db_key_tx);
@@ -123,7 +132,6 @@ char const * matrics_name(xmetrics_tag_t const tag) noexcept {
         RETURN_METRICS_NAME(cons_table_leader_make_unit_count);
         RETURN_METRICS_NAME(cons_table_total_process_tx_count);
         RETURN_METRICS_NAME(cons_table_total_process_unit_count);
-        RETURN_METRICS_NAME(cons_sync_on_demand_unit);
 
         RETURN_METRICS_NAME(cons_packtx_succ);
         RETURN_METRICS_NAME(cons_packtx_sendtx_succ);
@@ -137,6 +145,10 @@ char const * matrics_name(xmetrics_tag_t const tag) noexcept {
         RETURN_METRICS_NAME(cons_packtx_fail_nonce_contious);
         RETURN_METRICS_NAME(cons_packtx_fail_transfer_limit);
         RETURN_METRICS_NAME(cons_packtx_fail_load_origintx);
+
+        RETURN_METRICS_NAME(clock_aggregate_height);
+        RETURN_METRICS_NAME(clock_leader_broadcast_height);
+        RETURN_METRICS_NAME(clock_received_height);
 
         // store
         RETURN_METRICS_NAME(store_state_read);
@@ -176,16 +188,6 @@ char const * matrics_name(xmetrics_tag_t const tag) noexcept {
         RETURN_METRICS_NAME(store_dbsize_block_table_light);
         RETURN_METRICS_NAME(store_dbsize_block_table_full);
         RETURN_METRICS_NAME(store_dbsize_block_other);
-
-        // vledger dataobject
-        RETURN_METRICS_NAME(dataobject_xvnode_t);
-        RETURN_METRICS_NAME(dataobject_xvexestate_t);
-        RETURN_METRICS_NAME(dataobject_xvnodegroup);
-        RETURN_METRICS_NAME(dataobject_xcscoreobj_t);
-        RETURN_METRICS_NAME(dataobject_xblock_maker_t);
-        RETURN_METRICS_NAME(dataobject_xblockacct_t);
-        RETURN_METRICS_NAME(dataobject_xtxpool_table_info_t);
-        RETURN_METRICS_NAME(dataobject_xacctmeta_t);
 
         // message category
         RETURN_METRICS_NAME(message_category_consensus_contains_duplicate);
@@ -280,6 +282,8 @@ char const * matrics_name(xmetrics_tag_t const tag) noexcept {
         RETURN_METRICS_NAME(xsync_recv_get_blocks_by_hashes_bytes);
         RETURN_METRICS_NAME(xsync_store_block_units);
         RETURN_METRICS_NAME(xsync_store_block_tables);
+        RETURN_METRICS_NAME(xsync_unit_proof_sync_req_send);
+        RETURN_METRICS_NAME(xsync_unit_proof_sync_req_recv);
 
         // txpool
         RETURN_METRICS_NAME(txpool_received_self_send_receipt_num);
@@ -315,7 +319,8 @@ char const * matrics_name(xmetrics_tag_t const tag) noexcept {
         RETURN_METRICS_NAME(txpool_receipt_recv_num_7to12_clock);
         RETURN_METRICS_NAME(txpool_receipt_recv_num_13to30_clock);
         RETURN_METRICS_NAME(txpool_receipt_recv_num_exceed_30_clock);
-        RETURN_METRICS_NAME(txpool_push_send_fail_queue_limit);
+        RETURN_METRICS_NAME(txpool_push_send_fail_table_limit);
+        RETURN_METRICS_NAME(txpool_push_send_fail_role_limit);
         RETURN_METRICS_NAME(txpool_push_send_fail_repeat);
         RETURN_METRICS_NAME(txpool_push_send_fail_unconfirm_limit);
         RETURN_METRICS_NAME(txpool_push_send_fail_nonce_limit);
@@ -323,7 +328,8 @@ char const * matrics_name(xmetrics_tag_t const tag) noexcept {
         RETURN_METRICS_NAME(txpool_push_send_fail_account_not_in_charge);
         RETURN_METRICS_NAME(txpool_push_send_fail_nonce_expired);
         RETURN_METRICS_NAME(txpool_push_send_fail_nonce_duplicate);
-         RETURN_METRICS_NAME(txpool_push_send_fail_other);
+        RETURN_METRICS_NAME(txpool_push_send_fail_replaced);
+        RETURN_METRICS_NAME(txpool_push_send_fail_other);
         RETURN_METRICS_NAME(txpool_send_tx_timeout);
         RETURN_METRICS_NAME(txpool_tx_delay_from_push_to_pack_send);
         RETURN_METRICS_NAME(txpool_tx_delay_from_push_to_pack_recv);
@@ -380,6 +386,7 @@ char const * matrics_name(xmetrics_tag_t const tag) noexcept {
         RETURN_METRICS_NAME(blockstore_access_from_txpool);
         RETURN_METRICS_NAME(blockstore_access_from_txpool_on_block_event);
         RETURN_METRICS_NAME(blockstore_access_from_txpool_id_state);
+        RETURN_METRICS_NAME(blockstore_access_from_txpool_get_nonce);
         RETURN_METRICS_NAME(blockstore_access_from_txpool_refresh_table);
         RETURN_METRICS_NAME(blockstore_access_from_txpool_create_receipt);
         RETURN_METRICS_NAME(blockstore_access_from_txpool_pull_lacking_receipts);
@@ -571,6 +578,20 @@ char const * matrics_name(xmetrics_tag_t const tag) noexcept {
         RETURN_METRICS_NAME(cpu_ca_verify_multi_sign_xbft);
         RETURN_METRICS_NAME(cpu_ca_verify_multi_sign_tc);
         RETURN_METRICS_NAME(cpu_ca_verify_multi_sign_blockstore);
+        RETURN_METRICS_NAME(cpu_merkle_hash_calc);
+        RETURN_METRICS_NAME(cpu_hash_256_xecprikey_calc);
+        RETURN_METRICS_NAME(cpu_hash_256_XudpSocket_calc);
+        RETURN_METRICS_NAME(cpu_hash_256_GetRootKadmliaKey_calc);
+        RETURN_METRICS_NAME(cpu_hash_256_handle_register_node_calc);
+        RETURN_METRICS_NAME(cpu_hash_256_xtransaction_v1_calc);
+        RETURN_METRICS_NAME(cpu_hash_256_xtransaction_v2_calc);
+        RETURN_METRICS_NAME(cpu_hash_256_receiptid_bin_calc);
+        RETURN_METRICS_NAME(cpu_hash_256_xvproperty_prove_t_leafs_calc);
+        RETURN_METRICS_NAME(cpu_hash_256_xvproperty_property_bin_calc);
+        RETURN_METRICS_NAME(cpu_hash_256_xhashplugin_t_calc);
+
+        //bft
+        RETURN_METRICS_NAME(bft_verify_vote_msg_fail);
 
         default: assert(false); return nullptr;
     }

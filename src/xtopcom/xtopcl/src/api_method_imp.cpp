@@ -177,19 +177,20 @@ bool api_method_imp::transfer(const user_info & uinfo,
     info->trans_action->set_fire_timestamp(get_timestamp());
     info->trans_action->set_expire_duration(100);
 
-#ifdef RPC_V2
-    info->trans_action->set_amount(amount);
-    info->trans_action->set_source_addr(from);
-    info->trans_action->set_target_addr(to);
-#else
-    info->trans_action->set_last_hash(uinfo.last_hash_xxhash64);
-    info->trans_action->get_source_action().set_action_type(xaction_type_asset_out);
-    info->trans_action->get_source_action().set_account_addr(from);
-    info->trans_action->get_source_action().set_action_param(param);
-    info->trans_action->get_target_action().set_action_type(xaction_type_asset_in);
-    info->trans_action->get_target_action().set_account_addr(to);
-    info->trans_action->get_target_action().set_action_param(param);
-#endif
+    if (info->trans_action->get_tx_version() == xtransaction_version_2) {
+        info->trans_action->set_amount(amount);
+        info->trans_action->set_source_addr(from);
+        info->trans_action->set_target_addr(to);
+    } else {
+        info->trans_action->set_last_hash(uinfo.last_hash_xxhash64);
+        info->trans_action->set_source_action_type(xaction_type_asset_out);
+        info->trans_action->set_source_addr(from);
+        info->trans_action->set_source_action_para(param);
+        info->trans_action->set_target_action_type(xaction_type_asset_in);
+        info->trans_action->set_target_addr(to);
+        info->trans_action->set_target_action_para(param);
+    }
+    
     if (!hash_signature(info->trans_action.get(), uinfo.private_key)) {
         delete info;
         return false;
@@ -352,7 +353,7 @@ bool api_method_imp::runContract(const user_info & uinfo,
     set_user_info(info, uinfo, CMD_CALL_CONTRACT, func);
 
     xaction_asset_param asset_param(this, "", amount);
-    info->trans_action->get_source_action().set_action_param(asset_param.create());
+    info->trans_action->set_source_action_para(asset_param.create());
     std::string code_stream = serialize(contract_params);
     auto tx_info = top::data::xtx_action_info(uinfo.account, "", asset_param.create(), contract_account, contract_func, code_stream);
     info->trans_action->construct_tx(xtransaction_type_run_contract, 100, m_deposit, uinfo.nonce, "", tx_info);
@@ -1188,7 +1189,12 @@ static void set_user_info(task_info_callback<T> * info,
     info->use_transaction = use_transaction;
     info->host = g_server_host_port;
     info->callback_ = func;
-    info->params["version"] = top::data::RPC_VERSION_V1;
+    // only getTransaction & getBlock has 2.0 version rpc
+    if (method == CMD_ACCOUNT_TRANSACTION || method == CMD_GET_BLOCK) {
+        info->params["version"] = top::data::RPC_VERSION_V2;
+    } else {
+        info->params["version"] = top::data::RPC_VERSION_V1;
+    }
     info->params["balance"] = uinfo.balance;
     info->method = method;
     info->params["target_account_addr"] = uinfo.account;

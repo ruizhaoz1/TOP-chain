@@ -15,16 +15,16 @@ namespace top
     {
         xtx_receipt_t::xtx_receipt_t()
         : m_tx_action({},{},{},"invalid") {  // TODO(jimmy)
-            XMETRICS_GAUGE(metrics::dataobject_tx_receipt_t, 1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_tx_receipt_t, 1);
         }
         xtx_receipt_t::xtx_receipt_t(const base::xvaction_t & txaction, base::xvqcert_t* prove_cert, const std::string & path, enum_xprove_cert_type type)
         : m_tx_action(txaction) {
             m_tx_action_prove = make_object_ptr<xprove_cert_t>(prove_cert, type, path);
-            XMETRICS_GAUGE(metrics::dataobject_tx_receipt_t, 1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_tx_receipt_t, 1);
         }
 
         xtx_receipt_t::~xtx_receipt_t() {
-            XMETRICS_GAUGE(metrics::dataobject_tx_receipt_t, -1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_tx_receipt_t, -1);
         }
 
         int32_t xtx_receipt_t::do_write(base::xstream_t & stream) {
@@ -135,11 +135,12 @@ namespace top
             // get all leafs firstly for performance
             std::vector<std::string> all_leafs = xvblockmaker_t::get_input_merkle_leafs(commit_block->get_input());
 
+            xmerkle_t<utl::xsha2_256_t, uint256_t> merkle(all_leafs);
             // #3 calc leaf path and make rceipt
             std::vector<xfull_txreceipt_t> txreceipts;
             for (auto & action : actions) {
                 xmerkle_path_256_t hash_path;
-                if (false == xvblockmaker_t::calc_merkle_path(all_leafs, action, hash_path)) {
+                if (false == xvblockmaker_t::calc_merkle_path(action, hash_path, merkle)) {
                     xassert(false);
                     return {};
                 }
@@ -258,7 +259,8 @@ namespace top
 
             auto & action = actions[0];
             xmerkle_path_256_t hash_path;
-            if (false == xvblockmaker_t::calc_merkle_path(all_leafs, action, hash_path)) {
+            xmerkle_t<utl::xsha2_256_t, uint256_t> merkle(all_leafs);
+            if (false == xvblockmaker_t::calc_merkle_path(action, hash_path, merkle)) {
                 xassert(false);
                 return nullptr;
             }

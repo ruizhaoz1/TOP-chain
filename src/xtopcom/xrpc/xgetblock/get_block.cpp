@@ -64,6 +64,10 @@ bool get_block_handle::handle(std::string request) {
 
 void get_block_handle::getAccount() {
     std::string account = m_js_req["account_addr"].asString();
+    if (account.empty()) {
+        xwarn("getAccount:account is empty ");
+        return;
+    }  
     try {
         m_js_rsp["value"] = parse_account(account);
     } catch (exception & e) {
@@ -93,7 +97,6 @@ xJson::Value get_block_handle::parse_account(const std::string & account) {
         uint64_t last_hash_xxhash64 = static_cast<xJson::UInt64>(utl::xxh64_t::digest(last_hash.data(), last_hash.size()));
         result_json["latest_tx_hash_xxhash64"] = uint64_to_str(last_hash_xxhash64);
         result_json["latest_unit_height"] = static_cast<xJson::UInt64>(account_ptr->get_chain_height());
-        result_json["unconfirm_sendtx_num"] = static_cast<xJson::UInt64>(account_ptr->get_unconfirm_sendtx_num());
         result_json["recv_tx_num"] = static_cast<xJson::UInt64>(account_ptr->account_recv_trans_number());
 
         auto timer_height = get_timer_height();
@@ -499,6 +502,10 @@ xJson::Value get_block_handle::parse_tx(xtransaction_t * tx_ptr, const std::stri
         ori_tx_info.removeMember("sender_action");
         ori_tx_info["tx_action"]["receiver_action"] = ori_tx_info["receiver_action"];
         ori_tx_info.removeMember("receiver_action");
+        // for sys shard addr, the account must return with table id suffix
+        ori_tx_info["tx_action"]["receiver_action"]["tx_receiver_account_addr"] = tx_ptr->get_target_addr();
+    } else {
+        ori_tx_info["receiver_account"] = tx_ptr->get_target_addr();
     }
     return ori_tx_info;
 }
@@ -700,8 +707,20 @@ void get_block_handle::getTransaction() {
                 tx->add_ref();
                 xtransaction_ptr_t tx_ptr;
                 tx_ptr.attach(tx);
-                auto jsa = parse_action(tx_ptr->get_source_action());
-                auto jta = parse_action(tx_ptr->get_target_action());
+
+                data::xaction_t action;
+                action.set_account_addr(tx->get_source_addr());
+                action.set_action_type(tx->get_source_action_type());
+                action.set_action_name(tx->get_source_action_name());
+                action.set_action_param(tx->get_source_action_para());
+                auto jsa = parse_action(action);
+
+                action.set_account_addr(tx->get_origin_target_addr());
+                action.set_action_type(tx->get_target_action_type());
+                action.set_action_name(tx->get_target_action_name());
+                action.set_action_param(tx->get_target_action_para());
+                auto jta = parse_action(action);
+                
                 if (version == RPC_VERSION_V2) {
                     m_js_rsp["value"]["original_tx_info"]["sender_action_param"] = jsa;
                     m_js_rsp["value"]["original_tx_info"]["receiver_action_param"] = jta;
@@ -1004,6 +1023,11 @@ void get_block_handle::set_redeem_token_num(xaccount_ptr_t ac, xJson::Value & va
 void get_block_handle::set_shared_info(xJson::Value & root, xblock_t * bp) {
     root["owner"] = bp->get_block_owner();
     root["height"] = static_cast<unsigned long long>(bp->get_height());
+    if (bp->is_unitblock()) {
+        root["table_height"] = static_cast<unsigned long long>(bp->get_parent_block_height());    
+    } else {
+        root["table_height"] = static_cast<unsigned long long>(bp->get_height());    
+    }
     root["hash"] = bp->get_block_hash_hex_str();
     root["prev_hash"] = to_hex_str(bp->get_last_block_hash());
     root["timestamp"] = static_cast<unsigned long long>(bp->get_timestamp());
@@ -1397,12 +1421,12 @@ void get_block_handle::set_fullunit_state(xJson::Value & j_fu, data::xblock_t * 
     xassert(bstate != nullptr);
     data::xunit_bstate_t unitstate(bstate.get());
 
-    j_fu["latest_send_trans_number"] = static_cast<unsigned int>(unitstate.account_send_trans_number());
+    j_fu["latest_send_trans_number"] = static_cast<unsigned long long>(unitstate.account_send_trans_number());
     j_fu["latest_send_trans_hash"] = to_hex_str(unitstate.account_send_trans_hash());
-    j_fu["latest_recv_trans_number"] = static_cast<unsigned int>(unitstate.account_recv_trans_number());
-    j_fu["account_balance"] = static_cast<unsigned int>(unitstate.balance());
-    j_fu["burned_amount_change"] = static_cast<unsigned int>(unitstate.burn_balance());
-    j_fu["account_create_time"] = static_cast<unsigned int>(unitstate.get_account_create_time());
+    j_fu["latest_recv_trans_number"] = static_cast<unsigned long long>(unitstate.account_recv_trans_number());
+    j_fu["account_balance"] = static_cast<unsigned long long>(unitstate.balance());
+    j_fu["burned_amount_change"] = static_cast<unsigned long long>(unitstate.burn_balance());
+    j_fu["account_create_time"] = static_cast<unsigned long long>(unitstate.get_account_create_time());
 }
 
 void get_block_handle::set_body_info(xJson::Value & body, xblock_t * bp, const std::string & rpc_version) {
@@ -1438,10 +1462,7 @@ xJson::Value get_block_handle::get_block_json(xblock_t * bp, const std::string &
     }
 
     set_shared_info(root, bp);
-    if (rpc_version == RPC_VERSION_V2) {
-        root["parent_height"] = static_cast<unsigned long long>(bp->get_parent_block_height());    
-    }
-    
+
     xJson::Value header;
     set_header_info(header, bp);
     root["header"] = header;

@@ -38,6 +38,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <sys/statvfs.h>
 using json = nlohmann::json;
 
 namespace top {
@@ -170,7 +171,14 @@ void ChainCommands::AddSyncModuleCommands() {
             result = sync_module->status();
             // std::cout << result << std::endl;
         });
-
+        AddCommand(module_name, "autoprunedata", [this](const XchainArguments & args, const std::string & cmdline, std::string & result) {
+            if (args.size() < 1)
+                return;
+            std::string prune = args[0];
+            xinfo("enter set prune: %s", prune.c_str());
+            result = sync_module->auto_prune_data(prune);
+            // std::cout << result << std::endl;
+        });
     } catch (std::exception & e) {
         std::cout << "catch error: (" << e.what() << ") check_cast failed" << std::endl;
     }
@@ -252,14 +260,15 @@ int db_restore(const std::string & from, const std::string & to, const int backu
         printf("please make sure there is no any topio proccess running on current directory.\n");
         return -1;
     }
-    // check if the target directory specified by user is exist
-    if (!IsDirEmpty(target.c_str())) {
-        printf("Restore failed\nError: The target dir for restore is not empty, please input a empty one.\n");
-        return -1;
-    }
     // create two restore user directory, one for db, the other for pdb
     multiplatform_mkdir(target.c_str());
     auto db_target = target + DB_PATH;
+    // check if the target directory specified by user is exist
+    if (!IsDirEmpty(db_target.c_str())) {
+        printf("Restore failed: %s\nError: The target dir for restore is not empty, please input a empty one.\n", db_target.c_str());
+        return -1;
+    }
+
     multiplatform_mkdir(db_target.c_str());
 
     // printf("resetore from:%s to %s\n", from_db_dir.c_str(),db_target.c_str());
@@ -556,7 +565,7 @@ int parse_execute_command(const char * config_file_extra, int argc, char * argv[
     startnode->add_option("--admin_http_port", "admin http server port(default: 8000).");
     startnode->add_option("--bootnodes", "Comma separated endpoints(ip:port) for P2P  discovery bootstrap.");
     startnode->add_option("--net_port", "p2p network listening port (default: 9000).");
-    startnode->add_option("-c,--config", "start with config file.");
+    // startnode->add_option("-c,--config", "start with config file.");
     startnode->add_flag("--nodaemon", "start as no daemon.");
     startnode->callback([&]() {});
     // stopnode
@@ -792,9 +801,28 @@ int parse_execute_command(const char * config_file_extra, int argc, char * argv[
     // syncStatus
     auto syncstatus_app = chain_app->add_subcommand("syncStatus", "Get block sync status of the node.");
     syncstatus_app->callback(std::bind(node_call, std::ref(admin_http_addr), std::ref(admin_http_port)));
+
+    auto block_prune = [&](std::string& prune_enable, std::ostringstream& out_str, const std::string & admin_http_addr, uint16_t admin_http_port) -> int {
+        topcl.api.block_prune(prune_enable, out_str);
+        std::pair<std::string, uint16_t> admin_http_pair = std::make_pair(admin_http_addr, admin_http_port);
+        std::string cmd;
+        for (int i = 1; i < argc; ++i) {
+            if (strlen(argv[i]) == 0) {
+                continue;
+            }
+            cmd += argv[i];
+            cmd += " ";
+        }
+        std::string result;
+        handle_node_command(admin_http_pair, cmd, result);
+        std::cout << result << std::endl;
+        return 0;
+    };
+
     std::string prune_enable("off");
     auto block_prune_app = chain_app->add_subcommand("autoPruneData", "Set auto prune data.");
-    block_prune_app->callback(std::bind(&ApiMethod::block_prune, &topcl.api, std::ref(prune_enable), std::ref(out_str)));
+    block_prune_app->callback(std::bind(block_prune, std::ref(prune_enable), std::ref(out_str),
+        std::ref(admin_http_addr), std::ref(admin_http_port)));
     block_prune_app->add_option("on|off", prune_enable, "auto prune data on or off.")->required();
     /*
      * resource
@@ -946,6 +974,12 @@ int parse_execute_command(const char * config_file_extra, int argc, char * argv[
         db_restore(restoreFromDir, restoreToDir, backupid);
     });
 
+    auto cmd_db_download = db->add_subcommand("download", "download database.");
+    std::string download_addr;
+    cmd_db_download->add_option("download_addr", download_addr, "Download address.")->mandatory();
+    cmd_db_download->callback([&]() {
+        db_download(config_extra_json["datadir"].get<std::string>(), download_addr, out_str);
+    });
     /*
      * debug
      */
@@ -1027,6 +1061,187 @@ std::string decrypt_keystore(const std::string & keystore_path, const std::strin
 std::string decrypt_keystore_by_key(const std::string & keystore_path, const std::string & token) {
     auto private_key = xChainSDK::xcrypto::decrypt_keystore_by_key(token, keystore_path);
     return private_key;
+}
+
+uint64_t GetAvailableSpace(const char * path) {
+    struct statvfs stat;
+
+    if (statvfs(path, &stat) != 0) {
+        return -1;
+    }
+    // the available size is f_bsize * f_bavail
+    return stat.f_bsize * stat.f_bavail;
+}
+uint64_t get_db_file_length(const std::string& str_out) {
+    uint64_t len = 0;
+    std::string strtemp = str_out;
+    std::string::size_type found = str_out.find("Length: ");
+    if (found == std::string::npos)
+        return 0;
+    strtemp = strtemp.substr(found + 8);
+    //printf("find2: %s\n", strtemp.c_str());
+
+    found = strtemp.find(" ");
+    if (found == std::string::npos)
+        return 0;
+    strtemp = strtemp.substr(0, found);
+    //printf("find3: %s\n", strtemp.c_str());
+    len = std::strtoull(strtemp.c_str(), NULL, 0);
+    return len;
+}
+int db_download(const std::string datadir, const std::string& download_addr, std::ostringstream& out_str) {
+    std::string local_db_dir = datadir + DB_PATH;
+    if (!IsDirEmpty(local_db_dir.c_str())) {
+        out_str << "The target dir for restore is not empty: " << local_db_dir << std::endl;;
+        return 1;
+    }
+    std::string::size_type found = download_addr.find_last_of('/');
+    if (found == std::string::npos) {
+        out_str << "download address error." << std::endl;
+        return 1;
+    }
+    std::string db_filename = download_addr.substr(found + 1);
+    if (db_filename.empty())
+        return 1;
+    if (db_filename.substr(db_filename.size()-7) != ".tar.gz") {
+        out_str<<"only support tar.gz file format."<<std::endl;
+        return 1;
+    }
+
+    std::string down_cmd;
+    char tmp[4096] = {0};
+    uint64_t file_length = 0;
+    FILE * output = NULL;
+    // get file length
+    {
+        down_cmd = std::string("wget --spider ") + download_addr + " 2>&1";
+        printf("%s\n", down_cmd.c_str());
+        output = popen(down_cmd.c_str(), "r");
+        if (!output) {
+            printf("popen failed\n");
+            return 1;
+        }
+        while (fgets(tmp, sizeof(tmp), output) != NULL) {
+            printf("%s", tmp);
+            std::string strtemp = tmp;
+            if (strtemp.substr(0, 8).compare("Length: ") == 0) {
+                file_length = get_db_file_length(strtemp);
+                break;
+            }
+        }
+        pclose(output);
+        printf("file length: %llu\n", static_cast<unsigned long long>(file_length));
+        if (file_length == 0) {
+            return 0;
+        }
+    }
+
+    uint64_t free_space = GetAvailableSpace(datadir.c_str());
+    if (free_space < 0) {
+        printf("get free space fail: %s\n", datadir.c_str());
+        return 0;
+    }
+    printf("free space: %llu\n", static_cast<unsigned long long>(free_space));
+    if (free_space < file_length / 2 * 3) {
+        printf("No enough free disk space.\n");
+        return 0;
+    }
+
+    // wget download and extract file with one command
+    if (free_space < file_length / 2 * 5) {
+        down_cmd = std::string("wget -c ") + download_addr + " -O - | tar -xz -C " + datadir;
+        printf("%s\n", down_cmd.c_str());
+        output = popen(down_cmd.c_str(), "r");
+        if (!output) {
+            printf("popen failed\n");
+            return 1;
+        }
+        while (fgets(tmp, sizeof(tmp), output) != NULL) {
+            printf("%s", tmp);
+        }
+        pclose(output);
+        out_str << "download and extract db ok." << std::endl;;
+        return 0;
+    }
+
+    // download file and check md5sum
+    std::string md5sum;
+    {
+        std::string tmp_filename = db_filename.substr(0, db_filename.size() - 7);  // remove ".tar.gz"
+        found = tmp_filename.find_last_of('_');
+        if (found == std::string::npos) {
+            out_str << "database file name format error." << std::endl;
+            return 1;
+        }
+        md5sum = tmp_filename.substr(found + 1);  // get md5sum
+
+        tmp_filename = tmp_filename.substr(found);
+        found = tmp_filename.find_last_of('_');
+        if (found == std::string::npos) {
+            out_str << "database file name format error." << std::endl;
+            return 1;
+        }
+        std::string db_version = std::string("/db_") + tmp_filename.substr(found + 1);  // get db version
+    }
+    // wget download file
+    {
+        down_cmd = std::string("wget ") + download_addr;
+        output = popen(down_cmd.c_str(), "r");
+        if (!output) {
+            printf("popen failed\n");
+            return 1;
+        }
+        while (fgets(tmp, sizeof(tmp), output) != NULL) {
+            printf("%s", tmp);
+        }
+        pclose(output);
+        printf("download database ok.\n");
+    }
+    // check md5sum
+    {
+        down_cmd = std::string("md5sum ./") + db_filename;
+        output = popen(down_cmd.c_str(), "r");
+        if (!output) {
+            printf("popen failed\n");
+            return 1;
+        }
+        std::string md5_tmp;
+        while (fgets(tmp, sizeof(tmp), output) != NULL) {
+            printf("%s", tmp);
+            md5_tmp = tmp;
+        }
+        pclose(output);
+        found = md5_tmp.find(' ');
+        if (md5_tmp.substr(0, found) != md5sum) {
+            printf("md5 check failed: %s, %s\n", md5_tmp.substr(0, found).c_str(), md5sum.c_str());
+            return 1;
+        }
+        printf("md5sum check ok.\n");
+    }
+    // extract file
+    {
+        down_cmd = std::string("tar zxvf ./") + db_filename + " -C " + datadir;
+        printf("extract database: %s\n", down_cmd.c_str());
+        output = popen(down_cmd.c_str(), "r");
+        if (!output) {
+            printf("popen failed\n");
+            return 1;
+        }
+        std::string out;
+        while (fgets(tmp, sizeof(tmp), output) != NULL) {
+            if (out.empty())
+                out = tmp;
+            printf("%s", tmp);
+        }
+        found = out.find('/');
+        if (found == std::string::npos) {
+            printf("extract database error.\n");
+            return 1;
+        }
+        pclose(output);
+        printf("extract database to '%s' ok.\n", out.substr(0, found).c_str());
+    }
+    return 0;
 }
 
 }  //  namespace top

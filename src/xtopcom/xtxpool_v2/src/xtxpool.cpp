@@ -115,22 +115,6 @@ void xtxpool_t::print_statistic_values() const {
     XMETRICS_COUNTER_SET("txpool_height_record_cache", height_record_size);
 }
 
-// bool xtxpool_t::is_consensused_recv_receiptid(const std::string & from_addr, const std::string & to_addr, uint64_t receipt_id) const {
-//     auto table = get_txpool_table_by_addr(to_addr);
-//     if (table == nullptr) {
-//         return false;
-//     }
-//     return table->is_consensused_recv_receiptid(from_addr, receipt_id);
-// }
-
-// bool xtxpool_t::is_consensused_confirm_receiptid(const std::string & from_addr, const std::string & to_addr, uint64_t receipt_id) const {
-//     auto table = get_txpool_table_by_addr(from_addr);
-//     if (table == nullptr) {
-//         return false;
-//     }
-//     return table->is_consensused_confirm_receiptid(to_addr, receipt_id);
-// }
-
 const xcons_transaction_ptr_t xtxpool_t::pop_tx(const tx_info_t & txinfo) {
     auto table = get_txpool_table_by_addr(txinfo.get_addr());
     if (table == nullptr) {
@@ -187,16 +171,15 @@ void xtxpool_t::subscribe_tables(uint8_t zone, uint16_t front_table_id, uint16_t
     }
 
     std::lock_guard<std::mutex> lck(m_mutex[zone]);
-    for (uint32_t i = 0; i < m_shards[zone].size(); i++) {
-        if (m_shards[zone][i]->is_ids_match(zone, front_table_id, back_table_id, node_type)) {
-            m_shards[zone][i]->add_sub_count();
+    for (uint32_t i = 0; i < m_roles[zone].size(); i++) {
+        if (m_roles[zone][i]->is_ids_match(zone, front_table_id, back_table_id, node_type)) {
+            m_roles[zone][i]->add_sub_count();
             return;
         }
     }
-
-    std::shared_ptr<xtxpool_shard_info_t> shard = std::make_shared<xtxpool_shard_info_t>(zone, front_table_id, back_table_id, node_type);
-    m_shards[zone].push_back(shard);
-    shard->add_sub_count();
+    auto role = std::make_shared<xtxpool_role_info_t>(zone, front_table_id, back_table_id, node_type);
+    m_roles[zone].push_back(role);
+    role->add_sub_count();
 
     xtxpool_info("xtxpool_t::subscribe_tables sub tables:zone:%d,front_table_id:%d,back_table_id:%d", zone, front_table_id, back_table_id);
 
@@ -204,10 +187,10 @@ void xtxpool_t::subscribe_tables(uint8_t zone, uint16_t front_table_id, uint16_t
     for (uint16_t i = front_table_id; i <= back_table_id; i++) {
         std::string table_addr = data::xblocktool_t::make_address_table_account((base::enum_xchain_zone_index)zone, i);
         if (m_tables[zone][i] == nullptr) {
-            m_tables[zone][i] = std::make_shared<xtxpool_table_t>(m_para.get(), table_addr, shard.get(), &m_statistic, &m_all_table_sids);
+            m_tables[zone][i] = std::make_shared<xtxpool_table_t>(m_para.get(), table_addr, role.get(), &m_statistic, &m_all_table_sids);
             add_table_num++;
         } else {
-            m_tables[zone][i]->add_shard(shard.get());
+            m_tables[zone][i]->add_role(role.get());
         }
     }
     if (add_table_num > 0) {
@@ -230,7 +213,7 @@ void xtxpool_t::unsubscribe_tables(uint8_t zone, uint16_t front_table_id, uint16
     }
     std::lock_guard<std::mutex> lck(m_mutex[zone]);
     uint32_t remove_table_num = 0;
-    for (auto it = m_shards[zone].begin(); it != m_shards[zone].end(); it++) {
+    for (auto it = m_roles[zone].begin(); it != m_roles[zone].end(); it++) {
         if ((*it)->is_ids_match(zone, front_table_id, back_table_id, node_type)) {
             (*it)->del_sub_count();
             if ((*it)->get_sub_count() != 0) {
@@ -238,13 +221,14 @@ void xtxpool_t::unsubscribe_tables(uint8_t zone, uint16_t front_table_id, uint16
             }
             xtxpool_info("xtxpool_t::unsubscribe_tables unsub tables zone:%d,front_table_id:%d,back_table_id:%d", zone, front_table_id, back_table_id);
             for (uint16_t i = front_table_id; i <= back_table_id; i++) {
-                m_tables[zone][i]->remove_shard((*it).get());
-                if (m_tables[zone][i]->no_shard()) {
+                m_tables[zone][i]->remove_role((*it).get());
+                if (m_tables[zone][i]->no_role()) {
+                    xinfo("xtxpool_t::unsubscribe_tables erase table zone:%d idx:%d", zone, i);
                     m_tables[zone][i] = nullptr;
                     remove_table_num++;
                 }
             }
-            m_shards[zone].erase(it);
+            m_roles[zone].erase(it);
             break;
         }
     }
@@ -273,25 +257,10 @@ int32_t xtxpool_t::verify_txs(const std::string & account, const std::vector<xco
     return table->verify_txs(account, txs);
 }
 
-const std::vector<xcons_transaction_ptr_t> xtxpool_t::get_resend_txs(uint8_t zone, uint16_t subaddr, uint64_t now) {
+void xtxpool_t::refresh_table(uint8_t zone, uint16_t subaddr) {
     auto table = get_txpool_table(zone, subaddr);
     if (table != nullptr) {
-        return table->get_resend_txs(now);
-    }
-    return {};
-}
-
-void xtxpool_t::refresh_table_v1(uint8_t zone, uint16_t subaddr, bool refresh_unconfirm_txs) {
-    auto table = get_txpool_table(zone, subaddr);
-    if (table != nullptr) {
-        table->refresh_table_v1(refresh_unconfirm_txs);
-    }
-}
-
-void xtxpool_t::refresh_table_v2(uint8_t zone, uint16_t subaddr) {
-    auto table = get_txpool_table(zone, subaddr);
-    if (table != nullptr) {
-        table->refresh_table_v2();
+        table->refresh_table();
     }
 }
 
@@ -313,14 +282,6 @@ void xtxpool_t::update_table_state(const data::xtablestate_ptr_t & table_state) 
     table->update_table_state(table_state);
 }
 
-// xcons_transaction_ptr_t xtxpool_t::get_unconfirmed_tx(const std::string & from_table_addr, const std::string & to_table_addr, uint64_t receipt_id) const {
-//     auto table = get_txpool_table_by_addr(from_table_addr);
-//     if (table == nullptr) {
-//         return nullptr;
-//     }
-//     return table->get_unconfirmed_tx(to_table_addr, receipt_id);
-// }
-
 const std::vector<xtxpool_table_lacking_receipt_ids_t> xtxpool_t::get_lacking_recv_tx_ids(uint8_t zone, uint16_t subaddr, uint32_t & total_num) const {
     auto table = get_txpool_table(zone, subaddr);
     if (table != nullptr) {
@@ -333,14 +294,6 @@ const std::vector<xtxpool_table_lacking_receipt_ids_t> xtxpool_t::get_lacking_co
     auto table = get_txpool_table(zone, subaddr);
     if (table != nullptr) {
         return table->get_lacking_confirm_tx_ids(total_num);
-    }
-    return {};
-}
-
-const std::vector<xtxpool_table_lacking_confirm_tx_hashs_t> xtxpool_t::get_lacking_confirm_tx_hashs(uint8_t zone, uint16_t subaddr, uint32_t max_num) const {
-    auto table = get_txpool_table(zone, subaddr);
-    if (table != nullptr) {
-        return m_tables[zone][subaddr]->get_lacking_confirm_tx_hashs(max_num);
     }
     return {};
 }

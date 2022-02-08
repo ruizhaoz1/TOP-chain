@@ -17,7 +17,7 @@ namespace top
         xventity_t::xventity_t(enum_xdata_type type)
             :xdataunit_t(type)
         {
-            XMETRICS_GAUGE(metrics::dataobject_xventity, 1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xventity, 1);
             m_exe_module = NULL;
             m_entity_index = uint16_t(-1);
         }
@@ -25,14 +25,14 @@ namespace top
         xventity_t::xventity_t(const xventity_t & other)
             :xdataunit_t(other)
         {
-            XMETRICS_GAUGE(metrics::dataobject_xventity, 1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xventity, 1);
             m_exe_module = NULL;
             m_entity_index = other.m_entity_index;
         }
         
         xventity_t::~xventity_t()
         {
-            XMETRICS_GAUGE(metrics::dataobject_xventity, -1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xventity, -1);
             if(m_exe_module != NULL)
                 m_exe_module->release_ref();
         }
@@ -544,9 +544,9 @@ namespace top
                 }
                 
                 xstrmap_t * old_ptr = xatomic_t::xexchange(m_resources_obj, map_ptr);
-                if(old_ptr != NULL){
-                    old_ptr->release_ref();
-                    old_ptr = NULL;
+                if(old_ptr != NULL)
+                {
+                    xcontext_t::instance().delay_release_object(old_ptr);
                 }
             }
             return true;

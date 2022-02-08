@@ -14,11 +14,12 @@
 #include "xdata/xtransaction_v2.h"
 #include "xdata/xnative_contract_address.h"
 #include "xconfig/xpredefined_configurations.h"
-#include "xvm/xsystem_contracts/tcc/xrec_proposal_contract.h"
 #include "xstake/xstake_algorithm.h"
 #include "xconfig/xconfig_update_parameter_action.h"
+#include "xchain_fork/xchain_upgrade_center.h"
 
 #define private public
+#include "xvm/xsystem_contracts/tcc/xrec_proposal_contract.h"
 #include "xvm/xvm_service.h"
 #include "xvm/xvm_trace.h"
 #include "xdata/xgenesis_data.h"
@@ -37,6 +38,9 @@ class test_proposal_contract: public testing::Test {
 public:
 
     static void SetUpTestCase() {
+        chain_fork::xtop_chain_fork_config_center::init();
+        base::xvblock_fork_t::instance().init(chain_fork::xtop_chain_fork_config_center::is_block_forked);
+
         top::data::xrootblock_para_t para;
         para.m_tcc_accounts = {"T00000LfhWJA5JPcKPJovoBVtN4seYnnsVjx2VuB", "T00000LNEZSwcYJk6w8zWbR78Nhw8gbT2X944CBy", "T00000LfVA4mibYtKsGqGpGRxf8VZYHmdwriuZNo"};
         top::data::xrootblock_t::init(para);
@@ -63,58 +67,31 @@ public:
     }
 
     static data::xtransaction_ptr_t submit_proposal(std::string const& source_param, std::string const& target_param) {
-        xaction_t source_action;
-        xaction_t destination_action;
-
-        source_action.set_account_addr("T00000LWUw2ioaCw3TYJ9Lsgu767bbNpmj75kv73");
-        source_action.set_action_param(source_param);
-
-        destination_action.set_account_addr(sys_contract_rec_tcc_addr);
-        destination_action.set_action_name("submitProposal");
-        destination_action.set_action_param(target_param);
-
         data::xtransaction_v2_ptr_t submit_proposal_trx = make_object_ptr<xtransaction_v2_t>();
         submit_proposal_trx->set_source_addr("T00000LWUw2ioaCw3TYJ9Lsgu767bbNpmj75kv73");
         submit_proposal_trx->set_target_addr(sys_contract_rec_tcc_addr);
-        submit_proposal_trx->set_source_action(source_action);
-        submit_proposal_trx->set_target_action(destination_action);
+        submit_proposal_trx->set_source_action_para(source_param);
+        submit_proposal_trx->set_target_action_name("submitProposal");
+        submit_proposal_trx->set_target_action_para(target_param);
         return submit_proposal_trx;
 
     }
 
     static data::xtransaction_ptr_t withdraw_proposal(std::string const& target_param) {
-        xaction_t source_action;
-        xaction_t destination_action;
-
-        source_action.set_account_addr("T00000LWUw2ioaCw3TYJ9Lsgu767bbNpmj75kv73");
-
-        destination_action.set_account_addr(sys_contract_rec_tcc_addr);
-        destination_action.set_action_name("withdrawProposal");
-        destination_action.set_action_param(target_param);
-
         data::xtransaction_v2_ptr_t withdraw_proposal_trx = make_object_ptr<xtransaction_v2_t>();
         withdraw_proposal_trx->set_source_addr("T00000LWUw2ioaCw3TYJ9Lsgu767bbNpmj75kv73");
         withdraw_proposal_trx->set_target_addr(sys_contract_rec_tcc_addr);
-        withdraw_proposal_trx->set_source_action(source_action);
-        withdraw_proposal_trx->set_target_action(destination_action);
+        withdraw_proposal_trx->set_target_action_name("withdrawProposal");
+        withdraw_proposal_trx->set_target_action_para(target_param);
         return withdraw_proposal_trx;
     }
 
     static data::xtransaction_ptr_t vote_proposal(std::string const& target_param) {
-        xaction_t source_action;
-        xaction_t destination_action;
-
-        source_action.set_account_addr("T00000LfhWJA5JPcKPJovoBVtN4seYnnsVjx2VuB");
-
-        destination_action.set_account_addr(sys_contract_rec_tcc_addr);
-        destination_action.set_action_name("tccVote");
-        destination_action.set_action_param(target_param);
-
         data::xtransaction_v2_ptr_t vote_proposal_trx = make_object_ptr<xtransaction_v2_t>();
         vote_proposal_trx->set_source_addr("T00000LfhWJA5JPcKPJovoBVtN4seYnnsVjx2VuB");
         vote_proposal_trx->set_target_addr(sys_contract_rec_tcc_addr);
-        vote_proposal_trx->set_source_action(source_action);
-        vote_proposal_trx->set_target_action(destination_action);
+        vote_proposal_trx->set_target_action_name("tccVote");
+        vote_proposal_trx->set_target_action_para(target_param);
         return vote_proposal_trx;
     }
 
@@ -338,6 +315,25 @@ TEST_F(test_proposal_contract, test_incremental_utl) {
         ASSERT_EQ(function_string, target_string);
     }
 
+
+}
+
+TEST_F(test_proposal_contract, test_check_bwlist) {
+    xrec_proposal_contract api{common::xnetwork_id_t{1}};
+
+    {
+        auto addr_list = "T00000LMcqLyTzsk3HB8dhF51i6xEcVEuyX1Vx6p,T00000LRoHe2yUmmv5mkpcBhpeeypr24ZmSVVDfw,T80000bf73b170b3a14ec992e4c7a05625008e31b04161";
+        EXPECT_NO_THROW(api.check_bwlist_proposal(addr_list));
+    }
+
+    // {
+    //     auto addr_list = "T200024uMvLFmyttx6Nccv4jKP3VfRq9NJ2mxcNxh";
+    //     EXPECT_ANY_THROW(api.check_bwlist_proposal(addr_list));
+    // }
+    // {
+    //     auto addr_list = "Ta0001";
+    //     EXPECT_ANY_THROW(api.check_bwlist_proposal(addr_list));
+    // }
 
 }
 

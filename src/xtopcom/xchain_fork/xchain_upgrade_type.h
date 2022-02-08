@@ -9,7 +9,7 @@
 #include "xbasic/xoptional.hpp"
 
 namespace top {
-    namespace chain_upgrade {
+    namespace chain_fork {
        /**
          * @brief chain fork point type
          *
@@ -66,7 +66,8 @@ namespace top {
         struct xtop_chain_fork_config {
             top::optional<xfork_point_t> block_fork_point;  // should always keep block fork point
             top::optional<xfork_point_t> table_statistic_info_fork_point;
-            top::optional<xfork_point_t> table_receipt_protocol_fork_point;
+            top::optional<xfork_point_t> blacklist_function_fork_point;
+            top::optional<xfork_point_t> node_initial_credit_fork_point;
         };
         using xchain_fork_config_t = xtop_chain_fork_config;
     }

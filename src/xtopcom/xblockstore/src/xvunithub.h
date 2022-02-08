@@ -8,6 +8,7 @@
 #include <map>
 #include "xvledger/xvledger.h"
 #include "../xblockstore_face.h"
+#include "xvblockdb.h"
 #include "xvblockhub.h"
 
 namespace top
@@ -35,11 +36,14 @@ namespace top
             xvblockstore_impl   *   m_store_ptr;
         };
 
-        //note: layers for store :  [xvblock-store] --> [xstore] -->[xdb]
+        typedef std::function<base::xvbindex_t*(auto_xblockacct_ptr&) > xload_index_lambda;
+    
+        //note: layers for store :  [xvblockstore_t] -->[xvblockdb_t] -> [xvdbstore_t] -->[xdb]--->[RocksDB]
         class xvblockstore_impl : public base::xvblockstore_t
         {
+            friend class auto_xblockacct_ptr;
         public:
-            xvblockstore_impl(const std::string & blockstore_path,base::xcontext_t & _context,const int32_t target_thread_id,base::xvdbstore_t* xvdb_ptr);
+            xvblockstore_impl(base::xcontext_t & _context,const int32_t target_thread_id,base::xvdbstore_t* xvdb_ptr);
         protected:
             virtual ~xvblockstore_impl();
         private:
@@ -77,10 +81,11 @@ namespace top
 
             virtual bool                load_block_input(const base::xvaccount_t & account,base::xvblock_t* block,const int atag = 0) override;
             virtual bool                load_block_output(const base::xvaccount_t & account,base::xvblock_t* block,const int atag = 0) override;
-            virtual bool                load_block_flags(const base::xvaccount_t & account,base::xvblock_t* block,const int atag = 0) override;//update block'flags
 
             virtual bool                store_block(const base::xvaccount_t & account,base::xvblock_t* block,const int atag = 0) override;
             virtual bool                delete_block(const base::xvaccount_t & account,base::xvblock_t* block,const int atag = 0) override;
+
+            virtual bool                try_update_account_index(const base::xvaccount_t & account, uint64_t height, uint64_t viewid, bool update_pre_block) override;
 
 
         public://batch process api
@@ -117,7 +122,11 @@ namespace top
             virtual bool        delete_block_span(const base::xvaccount_t & account, const uint64_t height) override;
             virtual const std::string get_block_span(const base::xvaccount_t & account, const uint64_t height) override;
 
+            virtual bool        set_unit_proof(const base::xvaccount_t & account, const std::string &unit_proof, const uint64_t height) override;
+            virtual const std::string get_unit_proof(const base::xvaccount_t & account, const uint64_t height) override;
+
             bool                         store_txs_to_db(xblockacct_t* target_account,base::xvbindex_t* index_ptr);
+            bool                         on_block_committed(xblockacct_t* target_account,base::xvbindex_t* index_ptr);
         protected:
             bool    get_block_account(base::xvtable_t * target_table,const std::string & account_address,auto_xblockacct_ptr & inout_account_obj);
 
@@ -128,19 +137,24 @@ namespace top
             bool                        store_block(base::xauto_ptr<xblockacct_t> & container_account,base::xvblock_t * container_block,bool execute_block = true);
 
             bool                        store_block_but_not_execute(const base::xvaccount_t & account,base::xvblock_t* block);
+            bool                        store_committed_unit_block(const base::xvaccount_t & account, base::xvblock_t * container_block);
 
             //a full path to load vblock could be  get_store_path()/create_object_path()/xvblock_t::name()
             virtual std::string          get_store_path() const override {return m_store_path;}//each store may has own space at DB/disk
 
+
+        protected:
+            xvblockdb_t*                get_blockdb_ptr() const {return m_xvblockdb_ptr;}
         private:
+            bool                        on_block_committed(const xblockevent_t & event);
             bool                        on_block_stored(base::xvblock_t* this_block_ptr);//event for block store
+            bool                        store_units_to_db(xblockacct_t* target_account,base::xvbindex_t* index_ptr);
 
             virtual bool                on_object_close() override;
 
-        private: //just access by self thread
-            base::xvdbstore_t*                       m_xvdb_ptr;
-        private://below are accessed by muliple threads
-            std::string                              m_store_path;
+        private:
+            xvblockdb_t*                       m_xvblockdb_ptr;
+            std::string                        m_store_path;
         };
 
     };//end of namespace of vstore

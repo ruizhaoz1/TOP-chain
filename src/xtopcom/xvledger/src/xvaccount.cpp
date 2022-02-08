@@ -13,54 +13,40 @@ namespace top
 {
     namespace base
     {
+        //full_ledger = (ledger_id & 0xFFFF) + (subaddr_of_ledger & 0xFF)
+            //ledger_id= [chain_id:12bit][zone_index:4bit]
+            //[8bit:subaddr_of_ledger] = [5 bit:book-index]-[3 bit:table-index]
+        const std::string  fullledger_to_storageid(const xvid_t xvid_addr)//pick fixed 24bit as storage_id
+        {
+            char szBuff[32] = {0};
+            const int inBufLen = sizeof(szBuff);
+            const uint64_t storage_id = (get_vledger_ledger_id(xvid_addr) << 8) | get_vledger_subaddr(xvid_addr);
+            snprintf(szBuff,inBufLen,"%6llx", (long long unsigned int)storage_id);
+            return std::string(szBuff);//align 24bit as fixed size
+        }
+    
         //convert to binary/bytes address with compact mode as for DB 'key
         const std::string  xvaccount_t::get_storage_key(const xvaccount_t & _account)
-        {
+        {            
+            xassert(!_account.get_address().empty());
             //sample of full address as "Tx0000[raw_public_addr]@[subledger]"
-            const std::string& account_full_adress = _account.get_address();
-            if (account_full_adress.size() < enum_vaccount_address_prefix_size) {
-                xerror("xvaccount_t::get_storage_key fail,address=%s", account_full_adress.c_str());
-                return std::string();
-            }
-            
-            //step#1: extract the raw address of public key from full-address
-            std::string raw_public_addr;
-            const std::string::size_type end_raw_public_addr_pos = account_full_adress.find_last_of('@');
-            if(end_raw_public_addr_pos == std::string::npos)//most cases
-            {
-                raw_public_addr = account_full_adress.substr(enum_vaccount_address_prefix_size);
-            }
-            else if(end_raw_public_addr_pos > enum_vaccount_address_prefix_size)
-            {
-                //note: string substr (size_t pos = 0, size_t len = npos); //[)
-                raw_public_addr = account_full_adress.substr(enum_vaccount_address_prefix_size,end_raw_public_addr_pos - enum_vaccount_address_prefix_size);
-            }
-            else //exception case
-            {
-                raw_public_addr = account_full_adress.substr(enum_vaccount_address_prefix_size);
-            }
-            
-            //step#2: decode hex to byte address for eth address
-            enum_vaccount_addr_type addr_type = _account.get_addr_type();
-            if (addr_type == enum_vaccount_addr_type_secp256k1_eth_user_account)
-            {
-                raw_public_addr = base::xstring_utl::from_hex(raw_public_addr);
-            }
-            
+         
+            //ledger_id= [chain_id:12bit][zone_index:4bit]
+            //[10bit:subaddr_of_ledger] = [7 bit:book-index]-[3 bit:table-index]
             //step#3: combine with ledger_id/subsubleder/raw_public_addr
-            const std::string final_storage_key = xstring_utl::tostring(_account.get_ledger_id()) + "/" + xstring_utl::tostring(_account.get_ledger_subaddr()) + "/" + raw_public_addr;
+            const std::string final_storage_key = fullledger_to_storageid(_account.get_xvid()) + "/" + xvaccount_t::compact_address_to(_account.get_address());
             return final_storage_key;
         }
     
         xvaccount_t::xvaccount_t()
         {
-            XMETRICS_GAUGE(metrics::dataobject_xvaccount, 1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xvaccount, 1);
             m_account_xid = 0;
         }
     
         xvaccount_t::xvaccount_t(const std::string & account_address)
         {
-            XMETRICS_GAUGE(metrics::dataobject_xvaccount, 1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xvaccount, 1);
             m_account_addr  = account_address;
             m_account_xid   = get_xid_from_account(account_address);
             m_account_xid_str = xstring_utl::uint642hex(m_account_xid);
@@ -70,7 +56,7 @@ namespace top
         
         xvaccount_t::xvaccount_t(const xvaccount_t & obj)
         {
-            XMETRICS_GAUGE(metrics::dataobject_xvaccount, 1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xvaccount, 1);
             m_account_addr = obj.m_account_addr;
             m_account_xid  = obj.m_account_xid;
             m_account_xid_str = obj.m_account_xid_str;
@@ -98,7 +84,7 @@ namespace top
     
         xvaccount_t::~xvaccount_t()
         {
-            XMETRICS_GAUGE(metrics::dataobject_xvaccount, -1);
+            XMETRICS_GAUGE_DATAOBJECT(metrics::dataobject_xvaccount, -1);
         }
 
         std::string xvaccount_t::compact_address_to(const std::string & account_addr)
@@ -174,7 +160,7 @@ namespace top
         //------------------------------------account meta-------------------------------------//
         xblockmeta_t::xblockmeta_t()
         {
-            _lowest_vkey2_block_height     = (uint64_t)-1;//init as max value
+            _lowest_vkey2_block_height     = 0;
             _highest_deleted_block_height  = 0;
             _highest_cert_block_height     = 0;
             _highest_lock_block_height     = 0;
@@ -232,7 +218,7 @@ namespace top
         const std::string xblockmeta_t::ddump() const
         {
             char local_param_buf[256];
-            xprintf(local_param_buf,sizeof(local_param_buf),"{meta:height for cert=%" PRIu64 ",lock=%" PRIu64 ",commit=%" PRIu64 " ,connected=%" PRIu64 ",full=%" PRIu64 "}",(int64_t)_highest_cert_block_height,(int64_t)_highest_lock_block_height,(int64_t)_highest_commit_block_height,(int64_t)_highest_connect_block_height,_highest_full_block_height);
+            xprintf(local_param_buf,sizeof(local_param_buf),"{meta:height for cert=%" PRIu64 ",lock=%" PRIu64 ",commit=%" PRIu64 " ,connected=%" PRIu64 ",full=%" PRIu64 ",deleted=%" PRIu64 ",vkey2=%" PRIu64 "}",(int64_t)_highest_cert_block_height,(int64_t)_highest_lock_block_height,(int64_t)_highest_commit_block_height,(int64_t)_highest_connect_block_height,(int64_t)_highest_full_block_height,(int64_t)_highest_deleted_block_height,(int64_t)_lowest_vkey2_block_height);
             
             return std::string(local_param_buf);
         }
@@ -400,37 +386,29 @@ namespace top
             return meta_ptr;
         }
         
-        const std::string  xvactmeta_t::get_meta_path(xvaccount_t & _account)
-        {
-            std::string meta_path;
-            meta_path.reserve(256);
-            meta_path += "/";
-            meta_path += xstring_utl::tostring(_account.get_chainid());
-            meta_path += "/";
-            meta_path += _account.get_account();
-            meta_path += "/meta";
-            
-            return meta_path;
-        }
-        
-        xvactmeta_t::xvactmeta_t(xvaccount_t & _account)
+        xvactmeta_t::xvactmeta_t(const xvaccount_t & _account)
             :xdataobj_t(xdataunit_t::enum_xdata_type_vaccountmeta)
         {
+            init_version_control();
             _meta_process_id = base::xvchain_t::instance().get_current_process_id();
-            _meta_spec_version = 2;     //version #2 now
 
             #ifdef DEBUG
             m_account_address = _account.get_address();
             #else
             m_account_address = _account.get_xvid_str();
             #endif
+            
+            //XTODO,remove below assert when related xbase checked in main-branch
+            xassert(__XBASE_MAIN_VERSION_CODE__ >= 1);
+            xassert(__XBASE_FEATURE_VERSION_CODE__ >= 3);
+            xassert(__XBASE_MINOR_VERSION_CODE__ >= 8);
         }
         
         xvactmeta_t::xvactmeta_t(xvactmeta_t && obj)
             :xdataobj_t(xdataunit_t::enum_xdata_type_vaccountmeta)
         {
+            init_version_control();
             _meta_process_id = base::xvchain_t::instance().get_current_process_id();
-            _meta_spec_version = 2;     //version #2 now
             
             *this = obj;
         }
@@ -438,8 +416,8 @@ namespace top
         xvactmeta_t::xvactmeta_t(const xvactmeta_t & obj)
             :xdataobj_t(xdataunit_t::enum_xdata_type_vaccountmeta)
         {
+            init_version_control();
             _meta_process_id = base::xvchain_t::instance().get_current_process_id();
-            _meta_spec_version = 2;     //version #2 now
             
             *this = obj;
         }
@@ -628,44 +606,94 @@ namespace top
             return xdataobj_t::query_interface(_enum_xobject_type_);
         }
 
+        int32_t  xvactmeta_t::serialize_from(xstream_t & stream)
+        {
+            // override serialize_from for set enum_xdata_flag_fragment flag, otherwise it may be modified by xdataobj_t deserialize
+            int32_t ret = xdataobj_t::serialize_from(stream);
+            init_version_control();
+            return ret;
+        }
+
+        void   xvactmeta_t::init_version_control()
+        {
+            //borrow enum_xdata_flag_fragment to tell wheher using compact mode to serialization
+            set_unit_flag(enum_xdata_flag_fragment);
+            _meta_spec_version = 2;     //version #2 now
+        }
+
         int32_t   xvactmeta_t::do_write(xstream_t & stream)//serialize whole object to binary
         {
             const int32_t begin_size = stream.size();
-            
             const uint16_t cur_process_id = (uint16_t)base::xvchain_t::instance().get_current_process_id();
- 
-            stream << _highest_cert_block_height;
-            stream << _highest_lock_block_height;
-            stream << _highest_commit_block_height;
-            stream << _highest_execute_block_height;
-            stream << _highest_full_block_height;
-            stream << _highest_connect_block_height;
-            stream.write_tiny_string(_highest_connect_block_hash);
-            stream.write_tiny_string(_highest_execute_block_hash);
-            stream << _highest_genesis_connect_height;
-            stream.write_tiny_string(_highest_genesis_connect_hash);
-            stream << _highest_sync_height;
-            
-            //from here we introduce version control for meta
-            stream << _meta_spec_version;
-            stream << _block_level;
-            stream << cur_process_id;
-            stream << _highest_deleted_block_height;
-            
-            //keep above unchanged and compatible with old format
-            
-            //added since version#2 of _meta_spec_version
-            if(_meta_spec_version >= 2)
-            {
+
+            xassert(check_unit_flag(enum_xdata_flag_fragment) == true);
+            xassert(_meta_spec_version == 2);
+
+            //borrow enum_xdata_flag_fragment to tell wheher using compact mode to serialization
+            // if(check_unit_flag(enum_xdata_flag_fragment) == false)//old format
+            // {
+            //     stream << _highest_cert_block_height;
+            //     stream << _highest_lock_block_height;
+            //     stream << _highest_commit_block_height;
+            //     stream << _highest_execute_block_height;
+            //     stream << _highest_full_block_height;
+            //     stream << _highest_connect_block_height;
+            //     stream.write_tiny_string(_highest_connect_block_hash);
+            //     stream.write_tiny_string(_highest_execute_block_hash);
+            //     stream << _highest_genesis_connect_height;
+            //     stream.write_tiny_string(_highest_genesis_connect_hash);
+            //     stream << _highest_sync_height;
+                
+            //     //from here we introduce version control for meta
+            //     stream << _meta_spec_version;
+            //     stream << _block_level;
+            //     stream << cur_process_id;
+            //     stream << _highest_deleted_block_height;
+                
+            //     //keep above unchanged and compatible with old format
+                
+            //     //added since version#2 of _meta_spec_version
+            //     if(_meta_spec_version >= 2)
+            //     {
+            //         stream.write_compact_var(m_latest_unit_height);
+            //         stream.write_compact_var(m_latest_unit_viewid);
+            //         stream.write_compact_var(m_latest_tx_nonce);
+            //         stream.write_compact_var(m_account_flag);
+                    
+            //         stream.write_compact_var(_lowest_execute_block_height);
+            //         stream.write_compact_var(_lowest_vkey2_block_height);
+            //     }
+            // }
+            // else //new compact mode
+            // {
+                stream << _meta_spec_version;
+                stream << _block_level;
+                stream << cur_process_id;
+                
+                stream.write_compact_var(_highest_cert_block_height);
+                stream.write_compact_var(_highest_lock_block_height);
+                stream.write_compact_var(_highest_commit_block_height);
+                stream.write_compact_var(_highest_full_block_height);
+                stream.write_compact_var(_highest_deleted_block_height);
+                stream.write_compact_var(_lowest_vkey2_block_height);
+                stream.write_compact_var(_highest_sync_height);
+                
+                stream.write_compact_var(_lowest_execute_block_height);
+                stream.write_compact_var(_highest_execute_block_height);
+                stream.write_compact_var(_highest_execute_block_hash);
+
+                stream.write_compact_var(_highest_connect_block_height);
+                stream.write_compact_var(_highest_connect_block_hash);
+                
+                stream.write_compact_var(_highest_genesis_connect_height);
+                stream.write_compact_var(_highest_genesis_connect_hash);
+                
                 stream.write_compact_var(m_latest_unit_height);
                 stream.write_compact_var(m_latest_unit_viewid);
                 stream.write_compact_var(m_latest_tx_nonce);
                 stream.write_compact_var(m_account_flag);
-                
-                stream.write_compact_var(_lowest_execute_block_height);
-                stream.write_compact_var(_lowest_vkey2_block_height);
-            }
-            
+            // }
+        
             return (stream.size() - begin_size);
         }
     
@@ -673,36 +701,80 @@ namespace top
         {
             const int32_t begin_size = stream.size();
             
-            stream >> _highest_cert_block_height;
-            stream >> _highest_lock_block_height;
-            stream >> _highest_commit_block_height;
-            stream >> _highest_execute_block_height;
-            stream >> _highest_full_block_height;
-            stream >> _highest_connect_block_height;
-            stream.read_tiny_string(_highest_connect_block_hash);
-            stream.read_tiny_string(_highest_execute_block_hash);
-            stream >> _highest_genesis_connect_height;
-            stream.read_tiny_string(_highest_genesis_connect_hash);
-            stream >> _highest_sync_height;
-            
-            stream >> _meta_spec_version;
-            stream >> _block_level;
-            stream >> _meta_process_id;
-            stream >> _highest_deleted_block_height;
-            
-            //keep above unchanged and compatible with old format
-            
-            if(_meta_spec_version >= 2)//since version#2
+            //borrow enum_xdata_flag_fragment to tell wheher using compact mode to serialization
+            if(check_unit_flag(enum_xdata_flag_fragment) == false)//old format
             {
+                stream >> _highest_cert_block_height;
+                stream >> _highest_lock_block_height;
+                stream >> _highest_commit_block_height;
+                stream >> _highest_execute_block_height;
+                stream >> _highest_full_block_height;
+                stream >> _highest_connect_block_height;
+                stream.read_tiny_string(_highest_connect_block_hash);
+                stream.read_tiny_string(_highest_execute_block_hash);
+                stream >> _highest_genesis_connect_height;
+                stream.read_tiny_string(_highest_genesis_connect_hash);
+                stream >> _highest_sync_height;
+                
+                stream >> _meta_spec_version;
+                stream >> _block_level;
+                stream >> _meta_process_id;
+                stream >> _highest_deleted_block_height;
+                
+                //keep above unchanged and compatible with old format
+                
+                if(_meta_spec_version >= 2)//since version#2
+                {
+                    stream.read_compact_var(m_latest_unit_height);
+                    stream.read_compact_var(m_latest_unit_viewid);
+                    stream.read_compact_var(m_latest_tx_nonce);
+                    stream.read_compact_var(m_account_flag);
+                    
+                    stream.read_compact_var(_lowest_execute_block_height);
+                    stream.read_compact_var(_lowest_vkey2_block_height);
+                }
+
+                // XTODO restore to default value for old db
+                if ( (0 != _lowest_vkey2_block_height) || (0 != _highest_deleted_block_height) )
+                {
+                    xwarn("xvactmeta_t::do_read restore default value._lowest_vkey2_block_height=%ld,_highest_deleted_block_height=%ld",_lowest_vkey2_block_height,_highest_deleted_block_height);
+                    _lowest_vkey2_block_height     = 0;
+                    _highest_deleted_block_height  = 0;
+                    add_modified_count();
+                }
+            }
+            else //new compact mode
+            {
+                stream >> _meta_spec_version;
+                stream >> _block_level;
+                stream >> _meta_process_id;
+                
+                stream.read_compact_var(_highest_cert_block_height);
+                stream.read_compact_var(_highest_lock_block_height);
+                stream.read_compact_var(_highest_commit_block_height);
+                stream.read_compact_var(_highest_full_block_height);
+                stream.read_compact_var(_highest_deleted_block_height);
+                stream.read_compact_var(_lowest_vkey2_block_height);
+                stream.read_compact_var(_highest_sync_height);
+                
+                stream.read_compact_var(_lowest_execute_block_height);
+                stream.read_compact_var(_highest_execute_block_height);
+                stream.read_compact_var(_highest_execute_block_hash);
+                
+                stream.read_compact_var(_highest_connect_block_height);
+                stream.read_compact_var(_highest_connect_block_hash);
+                
+                stream.read_compact_var(_highest_genesis_connect_height);
+                stream.read_compact_var(_highest_genesis_connect_hash);
+                
                 stream.read_compact_var(m_latest_unit_height);
                 stream.read_compact_var(m_latest_unit_viewid);
                 stream.read_compact_var(m_latest_tx_nonce);
                 stream.read_compact_var(m_account_flag);
-                
-                stream.read_compact_var(_lowest_execute_block_height);
-                stream.read_compact_var(_lowest_vkey2_block_height);
             }
- 
+            
+            init_version_control();  // reinit version control
+
             return (begin_size - stream.size());
         }
         

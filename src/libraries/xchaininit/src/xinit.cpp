@@ -28,6 +28,7 @@
 #include "xverifier/xverifier_utl.h"
 #include "xtopcl/include/api_method.h"
 #include "xconfig/xpredefined_configurations.h"
+#include "xmigrate/xvmigrate.h"
 
 // nlohmann_json
 #include <nlohmann/json.hpp>
@@ -75,8 +76,23 @@ static bool create_rootblock(const std::string & config_file) {
     return true;
 }
 
+bool set_auto_prune_switch(const std::string& prune)
+{
+    std::string prune_enable = prune;
+    top::base::xstring_utl::tolower_string(prune_enable);
+    if (prune_enable == "on")
+        base::xvchain_t::instance().enable_auto_prune(true);
+    else
+        base::xvchain_t::instance().enable_auto_prune(false);
+    return true;
+}
 
-
+bool db_migrate(const std::string & src_db_path)
+{    
+    base::xvblockstore_t* _blockstore = base::xvchain_t::instance().get_xblockstore();
+    xassert(_blockstore != nullptr);
+    return base::db_delta_migrate_v2_to_v3(src_db_path, _blockstore);
+}
 
 int topchain_init(const std::string& config_file, const std::string& config_extra) {
     using namespace std;
@@ -98,10 +114,17 @@ int topchain_init(const std::string& config_file, const std::string& config_extr
     auto& config_center = top::config::xconfig_register_t::get_instance();
     auto offchain_loader = std::make_shared<loader::xconfig_offchain_loader_t>(config_file, config_extra);
     config_center.add_loader(offchain_loader);
-    config_center.load();
+    if (!config_center.load()) {
+        xwarn("parse config %s failed!", config_file.c_str());
+        return -1;
+    }
     config_center.remove_loader(offchain_loader);
     config_center.init_static_config();
 
+    // XTODO from v3, v3_db_path = config_path+DB_PATH
+    std::string v2_db_path = XGET_CONFIG(db_path) + "/db";  // TODO(jimmy) delete in v1.2.8
+    std::string v3_db_path = XGET_CONFIG(db_path) + DB_PATH;
+    config_center.set(config::xdb_path_configuration_t::name, v3_db_path);
 
     xchain_params chain_params;
     // attention: put chain_params.initconfig_using_configcenter behind config_center
@@ -125,11 +148,17 @@ int topchain_init(const std::string& config_file, const std::string& config_extr
     auto xbase_info = base::xcontext_t::get_xbase_info();
     xwarn("=== xtopchain start here ===");
     xwarn("=== xbase info: %s ===", xbase_info.c_str());
+    config_center.log_dump();
     std::cout << "=== xtopchain start here ===" << std::endl;
     std::cout << "=== xbase info:" << xbase_info << " ===" << std::endl;
 
     //wait log path created,and init metrics
     XMETRICS_INIT2(log_path);
+
+    //init data_path into xvchain instance
+    //init auto_prune feature
+    set_auto_prune_switch(XGET_CONFIG(auto_prune_data));
+    xkinfo("topchain_init init auto_prune_switch= %d", base::xvchain_t::instance().is_auto_prune_enable());
 
     MEMCHECK_INIT();
     if (false == create_rootblock(config_file)) {
@@ -169,6 +198,11 @@ int topchain_init(const std::string& config_file, const std::string& config_extr
         xpublic_key_t{ user_params.publickey },
         user_params.signkey
     };
+
+    if (false == db_migrate(v2_db_path)) {
+        return 1;
+    }
+
     app.start();
     xinfo("==== app start done ===");
 
@@ -236,7 +270,11 @@ bool load_bwlist_content(std::string const& config_file, std::map<std::string, s
         if (json_root[member].isArray()) {
             for (unsigned int i = 0; i < json_root[member].size(); ++i) {
                 try {
-                    if ( top::xverifier::xverifier_success != top::xverifier::xtx_utl::address_is_valid(json_root[member][i].asString())) return false;
+                    auto const& addr = json_root[member][i].asString();
+                    if (addr.size() <= top::base::xvaccount_t::enum_vaccount_address_prefix_size) return false;
+                    auto const addr_type = top::base::xvaccount_t::get_addrtype_from_account(addr);
+                    if (addr_type != top::base::enum_vaccount_addr_type::enum_vaccount_addr_type_secp256k1_eth_user_account && addr_type != top::base::enum_vaccount_addr_type::enum_vaccount_addr_type_secp256k1_user_account) return false;
+                    if ( top::xverifier::xverifier_success != top::xverifier::xtx_utl::address_is_valid(addr)) return false;
                 } catch (...) {
                     xwarn("parse config file %s failed", config_file.c_str());
                     return false;
@@ -259,7 +297,7 @@ bool load_bwlist_content(std::string const& config_file, std::map<std::string, s
 bool check_miner_info(const std::string &pub_key, const std::string &node_id) {
     g_userinfo.account = node_id;
     if (top::base::xvaccount_t::get_addrtype_from_account(g_userinfo.account) == top::base::enum_vaccount_addr_type_secp256k1_eth_user_account)
-        std::transform(g_userinfo.account.begin() + 1, g_userinfo.account.end(), g_userinfo.account.begin() + 1, ::tolower);    
+        std::transform(g_userinfo.account.begin() + 1, g_userinfo.account.end(), g_userinfo.account.begin() + 1, ::tolower);
     top::xtopcl::xtopcl xtop_cl;
     std::string result;
     xtop_cl.api.change_trans_mode(true);
@@ -321,16 +359,14 @@ int topchain_noparams_init(const std::string& pub_key, const std::string& pri_ke
     //using top::elect::xbeacon_xelect_imp;
 
     auto hash_plugin = new xtop_hash_t();
-    std::string chain_db_path;
+    std::string chain_db_path = datadir + DB_PATH;
     std::string log_path;
     std::string bwlist_path;
 #ifdef _WIN32
-    chain_db_path = datadir + DB_PATH;
     log_path = datadir + "\\log";
     bwlist_path = datadir + "\\bwlist.json"
     // TODO(smaug) mkdir in windows
 #else
-    chain_db_path = datadir + DB_PATH;
     log_path = datadir + "/log";
     bwlist_path = datadir + "/bwlist.json";
 
@@ -396,7 +432,7 @@ int topchain_noparams_init(const std::string& pub_key, const std::string& pri_ke
     auto& user_params = data::xuser_params::get_instance();
     global_node_id = user_params.account.value();
 
-    global_node_signkey = DecodePrivateString(user_params.signkey);    
+    global_node_signkey = DecodePrivateString(user_params.signkey);
 
 #ifdef CONFIG_CHECK
     // config check
@@ -418,6 +454,12 @@ int topchain_noparams_init(const std::string& pub_key, const std::string& pri_ke
     xinfo("=== xtopchain start here with noparams ===");
     std::cout << "xnode start begin..." << std::endl;
 
+    //init data_path into xvchain instance
+    base::xvchain_t::instance().set_data_dir_path(datadir);
+    //init auto_prune feature
+    set_auto_prune_switch(XGET_CONFIG(auto_prune_data));
+    xkinfo("topchain_noparams_init auto_prune_switch= %d", base::xvchain_t::instance().is_auto_prune_enable());
+
     // load bwlist
     std::map<std::string, std::string> bwlist;
     auto ret = load_bwlist_content(bwlist_path, bwlist);
@@ -426,13 +468,14 @@ int topchain_noparams_init(const std::string& pub_key, const std::string& pri_ke
             xdbg("key %s, value %s", item.first.c_str(), item.second.c_str());
             config_center.set(item.first, item.second);
         }
+    } else {
+        xdbg("load_bwlist_content failed!");
     }
 
     MEMCHECK_INIT();
     if (false == create_rootblock("")) {
         return 1;
     }
-
     // start admin http service
     {
         xinfo("==== start admin http server ===");
@@ -474,6 +517,12 @@ int topchain_noparams_init(const std::string& pub_key, const std::string& pri_ke
         xpublic_key_t{ user_params.publickey },
         user_params.signkey
     };
+
+    std::string v2_db_path = datadir + OLD_DB_PATH;
+    if (false == db_migrate(v2_db_path)) {
+        return 1;
+    }
+
     app.start();
 
     std::cout << std::endl
@@ -484,7 +533,7 @@ int topchain_noparams_init(const std::string& pub_key, const std::string& pri_ke
     xinfo("================================================");
     xinfo("topio start ok");
     xinfo("================================================");
-
+  
     // make block here
     while (true) {
         std::this_thread::sleep_for(std::chrono::seconds(1));

@@ -90,11 +90,15 @@ void catch_system_signals()
     signal(SIGINT, SIG_IGN); //disable INT signal
     signal(SIGHUP, SIG_IGN); //disable HUP signal
     
+#ifndef DISABLE_CORE_SIGNAL_CAPTURE
+#ifndef DEBUG
     //config signal of cores
     sigaction(SIGSEGV, &_sys_sigact, NULL);
     sigaction(SIGILL, &_sys_sigact, NULL);
     sigaction(SIGFPE, &_sys_sigact, NULL);
     sigaction(SIGABRT, &_sys_sigact, NULL);
+#endif
+#endif
     
     //config user 'signal
     sigaction(SIGUSR1, &_sys_sigact, NULL);
@@ -146,9 +150,9 @@ int start_monitor_thread() {
 }
 
 int main(int argc, char * argv[]) {
-
+#if 1  // TODO(jimmy) for debug
     catch_system_signals();//setup and hook system signals
-    
+#endif
     // use this to join or quit network, config show_cmd = false will come here
     // auto elect_mgr = elect_main.elect_manager();
     try {

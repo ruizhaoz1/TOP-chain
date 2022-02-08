@@ -34,7 +34,6 @@
 #include "xstore/xaccount_context.h"
 #include "xstore/xstore.h"
 #include "xstore/xstore_error.h"
-#include "xstore/xstore_util.h"
 
 #include "xdata/xgenesis_data.h"
 
@@ -58,6 +57,11 @@ bool xstore::open() const {
 
 xaccount_ptr_t xstore::query_account(const std::string &address) const {
     base::xvaccount_t _vaddr(address);
+    if (_vaddr.get_account().empty()) {
+        xerror("xstore::query_account fail-invalid address. account=%s,size=%zu", address.c_str(), address.size());
+        return nullptr;
+    }
+
     XMETRICS_GAUGE(metrics::blockstore_access_from_store, 1);
     auto _block = base::xvchain_t::instance().get_xblockstore()->get_latest_connected_block(_vaddr);
     if (_block == nullptr) {
@@ -261,16 +265,10 @@ bool xstore::delete_block_by_path(const std::string & store_path,const std::stri
 }
 
 bool xstore::set_value(const std::string &key, const std::string &value) {
-#ifdef DB_KV_STATISTIC    
-    xstore_util::metrics_key_value(key, value, true);
-#endif   
     return m_db->write(key, value);
 }
 
 bool xstore::delete_value(const std::string &key) {
-#ifdef DB_KV_STATISTIC  
-    xstore_util::metrics_key_value(key, get_value(key), false);
-#endif
     return m_db->erase(key);
 }
 
@@ -284,10 +282,35 @@ const std::string xstore::get_value(const std::string &key) const {
     return value;
 }
 
-bool  xstore::find_values(const std::string & key,std::vector<std::string> & values)//support wild search
+bool  xstore::delete_values(std::vector<std::string> & to_deleted_keys)
 {
-    xassert(false);
-    return false;
+    std::map<std::string, std::string> empty_put;
+    return m_db->batch_change(empty_put, to_deleted_keys);
+}
+
+//prefix must start from first char of key
+bool   xstore::read_range(const std::string& prefix, std::vector<std::string>& values)
+{
+    return m_db->read_range(prefix,values);
+}
+ 
+//note:begin_key and end_key must has same style(first char of key)
+bool   xstore::delete_range(const std::string & begin_key,const std::string & end_key)
+{
+    return m_db->delete_range(begin_key,end_key);
+}
+
+//compact whole DB if both begin_key and end_key are empty
+//note: begin_key and end_key must be at same CF while XDB configed by multiple CFs
+bool  xstore::compact_range(const std::string & begin_key,const std::string & end_key)
+{
+    return m_db->compact_range(begin_key,end_key);
+}
+
+//key must be readonly(never update after PUT),otherwise the behavior is undefined
+bool   xstore::single_delete(const std::string & target_key)//key must be readonly(never update after PUT),otherwise the behavior is undefined
+{
+    return m_db->single_delete(target_key);
 }
 
 } // namespace store

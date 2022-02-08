@@ -18,7 +18,7 @@
 #include "xtxpool_service_v2/xtxpool_service.h"
 #include "xtxpool_v2/xreceipt_resend.h"
 #include "xtxpool_v2/xtxpool_error.h"
-#include "xchain_upgrade/xchain_upgrade_center.h"
+#include "xchain_fork/xchain_upgrade_center.h"
 
 #include <cinttypes>
 
@@ -148,6 +148,16 @@ bool xtxpool_service_mgr::start(const xvip2_t & xip, const std::shared_ptr<vnetw
     return false;
 }
 
+bool xtxpool_service_mgr::fade(const xvip2_t & xip) {
+    xinfo("xtxpool_service_mgr::fade xip:{%" PRIu64 ", %" PRIu64 "} ", xip.high_addr, xip.low_addr);
+    std::shared_ptr<xtxpool_service_face> service = find(xip);
+    if (service != nullptr) {
+        service->fade(xip);
+        return true;
+    }
+    return false;
+}
+
 // uninit data
 bool xtxpool_service_mgr::unreg(const xvip2_t & xip) {
     // auto key = xcons_utl::erase_version(xip);
@@ -163,8 +173,8 @@ bool xtxpool_service_mgr::unreg(const xvip2_t & xip) {
         if (iter != m_service_map.end()) {
             auto txpool_service = iter->second;
             txpool_service->get_service_table_boundary(zone_id, fount_table_id, back_table_id, node_type);
-            need_cleanup = true;
             txpool_service->unreg(xip);
+            need_cleanup = true;
             m_service_map.erase(iter);
         }
     }
@@ -212,15 +222,13 @@ void xtxpool_service_mgr::on_timer() {
     std::vector<std::shared_ptr<xtxpool_service_face>> pull_lacking_receipts_service_vec;
     std::vector<std::shared_ptr<xtxpool_service_face>> receipts_recender_service_vec;
 
-    auto fork_config = top::chain_upgrade::xtop_chain_fork_config_center::chain_fork_config();
-    auto clock = m_clock->logic_time();
-    bool is_forked = chain_upgrade::xtop_chain_fork_config_center::is_forked(fork_config.table_receipt_protocol_fork_point, clock);
-    xdbg("xtxpool_service_mgr::on_timer is_forked:%d,clock:%llu", is_forked, clock);
-
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         for (auto & iter : m_service_map) {
             auto service = iter.second;
+            if (!service->is_running()) {
+                continue;
+            }
             // only receipt sender need recover unconfirmed txs.
             if (service->is_send_receipt_role()) {
                 pull_lacking_receipts_service_vec.insert(pull_lacking_receipts_service_vec.begin(), service);
@@ -248,33 +256,18 @@ void xtxpool_service_mgr::on_timer() {
         uint32_t back_table_id = std::get<2>(table_boundary);
         bool refresh_unconfirm_txs = std::get<3>(table_boundary);
         xinfo("xtxpool_service_mgr::on_timer, refresh table zone:%d table:%d:%d refresh_unconfirm_txs:%d", zone_id, fount_table_id, back_table_id, refresh_unconfirm_txs);
-        if (is_forked) {
-            for (uint32_t table_id = fount_table_id; table_id <= back_table_id; table_id++) {
-                m_para->get_txpool()->refresh_table_v2(zone_id, table_id);
-                // m_para->get_txpool()->update_non_ready_accounts(zone_id, table_id);
-            }
-        } else {
-            for (uint32_t table_id = fount_table_id; table_id <= back_table_id; table_id++) {
-                m_para->get_txpool()->refresh_table_v1(zone_id, table_id, refresh_unconfirm_txs);
-            }
+        for (uint32_t table_id = fount_table_id; table_id <= back_table_id; table_id++) {
+            m_para->get_txpool()->refresh_table(zone_id, table_id);
+            // m_para->get_txpool()->update_non_ready_accounts(zone_id, table_id);
         }
     }
 
     xcovered_tables_t covered_tables;
-    if (is_forked) {
-        for (auto & service : pull_lacking_receipts_service_vec) {
-            service->pull_lacking_receipts_v2(now, covered_tables);
-        }
-        for (auto & service : receipts_recender_service_vec) {
-            service->send_receipt_id_state(now);
-        }
-    } else {
-        for (auto & service : pull_lacking_receipts_service_vec) {
-            service->pull_lacking_receipts_v1(now, covered_tables);
-        }
-        for (auto & service : receipts_recender_service_vec) {
-            service->resend_receipts(now);
-        }
+    for (auto & service : pull_lacking_receipts_service_vec) {
+        service->pull_lacking_receipts(now, covered_tables);
+    }
+    for (auto & service : receipts_recender_service_vec) {
+        service->send_receipt_id_state(now);
     }
 
     if ((now % print_txpool_statistic_values_freq) == 0) {

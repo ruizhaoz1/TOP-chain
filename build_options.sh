@@ -169,9 +169,13 @@ do
         CMAKE_EXTRA_OPTIONS+=" -DXCHAIN_FORKED_BY_DEFAULT=ON"
         echo "BUILD WITH XCHAIN_FORKED_BY_DEFAULT (all fork points are forked BY DEFAULT)"
     ;;
-    rpc_v2)
-        CMAKE_EXTRA_OPTIONS+=" -DRPC_V2=ON"
-        echo "Build RPC V2"
+    metrics_dataobject)
+        CMAKE_EXTRA_OPTIONS+=" -DENABLE_METRICS_DATAOBJECT=ON"
+        echo "BUILD WITH ENABLE_METRICS_DATAOBJECT"
+    ;;
+    disable_core_signal_capture)
+        CMAKE_EXTRA_OPTIONS+=" -DDISABLE_CORE_SIGNAL_CAPTURE=ON"
+        echo "BUILD WITH DISABLE_CORE_SIGNAL_CAPTURE"
     ;;
     *)
         CMAKE_EXTRA_OPTIONS=" -DXENABLE_TESTS=OFF -DXENABLE_CODE_COVERAGE=OFF"

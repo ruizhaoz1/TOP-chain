@@ -9,9 +9,11 @@
 #include "xdata/xgenesis_data.h"
 #include "xdata/xblockbuild.h"
 #include "xdata/xtable_bstate.h"
-#include "xdata/xtransaction_v1.h"
+#include "xdata/xtx_factory.h"
 #include "xvledger/xvblockstore.h"
 #include "xvledger/xvstate.h"
+#include "xvledger/xvledger.h"
+#include "xmbus/xevent_behind.h"
 
 NS_BEG2(top, data)
 
@@ -30,16 +32,7 @@ base::xvblock_t*  xblocktool_t::create_genesis_empty_table(const std::string & a
 }
 
 base::xvblock_t*   xblocktool_t::create_genesis_lightunit(const std::string & account, int64_t top_balance) {
-    xtransaction_ptr_t tx = make_object_ptr<xtransaction_v1_t>();
-    data::xproperty_asset asset(top_balance);
-    tx->make_tx_transfer(asset);
-    // genesis transfer tx is a special transaction
-    tx->set_same_source_target_address(account);
-    tx->set_fire_timestamp(0);
-    tx->set_expire_duration(0);
-    tx->set_deposit(0);
-    tx->set_digest();
-    tx->set_len();
+    xtransaction_ptr_t tx = xtx_factory::create_genesis_tx_with_balance(account, top_balance);
 
     xtransaction_result_t result;
     xobject_ptr_t<base::xvbstate_t> bstate = make_object_ptr<base::xvbstate_t>(account, (uint64_t)0, (uint64_t)0, std::string(), std::string(), (uint64_t)0, (uint32_t)0, (uint16_t)0);
@@ -74,16 +67,7 @@ base::xvblock_t*   xblocktool_t::create_genesis_lightunit(const std::string & ac
 }
 
 base::xvblock_t * xblocktool_t::create_genesis_lightunit(std::string const & account, chain_data::data_processor_t const & data) {
-    xtransaction_ptr_t tx = make_object_ptr<xtransaction_v1_t>();
-    data::xproperty_asset asset(data.top_balance);
-    tx->make_tx_transfer(asset);
-    // genesis transfer tx is a special transaction
-    tx->set_same_source_target_address(account);
-    tx->set_fire_timestamp(0);
-    tx->set_expire_duration(0);
-    tx->set_deposit(0);
-    tx->set_digest();
-    tx->set_len();
+    xtransaction_ptr_t tx = xtx_factory::create_genesis_tx_with_balance(account, data.top_balance);
 
     xtransaction_result_t result;
     xobject_ptr_t<base::xvbstate_t> bstate = make_object_ptr<base::xvbstate_t>(account, (uint64_t)0, (uint64_t)0, std::string(), std::string(), (uint64_t)0, (uint32_t)0, (uint16_t)0);
@@ -260,13 +244,30 @@ std::string xblocktool_t::make_address_user_contract(const std::string & public_
     return base::xvaccount_t::make_account_address(base::enum_vaccount_addr_type_custom_contract, ledger_id, public_key_address);
 }
 
-base::xauto_ptr<base::xvblock_t> xblocktool_t::get_latest_connectted_light_block(base::xvblockstore_t* blockstore, const base::xvaccount_t & account) {
+std::vector<std::string> xblocktool_t::make_all_table_addresses() {
+    std::vector<std::string> table_addrs;
+    const std::vector<std::pair<base::enum_xchain_zone_index, uint16_t>> table = {
+        std::make_pair(base::enum_chain_zone_consensus_index, enum_vledger_const::enum_vbucket_has_tables_count),
+        std::make_pair(base::enum_chain_zone_zec_index, MAIN_CHAIN_ZEC_TABLE_USED_NUM),
+        std::make_pair(base::enum_chain_zone_beacon_index, MAIN_CHAIN_REC_TABLE_USED_NUM),
+    };
+    for (auto const & t : table) {
+        for (auto i = 0; i < t.second; i++) {
+            std::string addr = base::xvaccount_t::make_table_account_address(t.first, i);
+            table_addrs.push_back(addr);
+        }
+    }
+    return table_addrs;
+}
+
+base::xauto_ptr<base::xvblock_t> xblocktool_t::get_latest_connectted_state_changed_block(base::xvblockstore_t* blockstore, const base::xvaccount_t & account) {
     base::xauto_ptr<base::xvblock_t> vblock = blockstore->get_latest_connected_block(account);
     if (vblock->get_block_class() == base::enum_xvblock_class_light) {
         return vblock;
     }
-    if (vblock->get_block_class() == base::enum_xvblock_class_full) {
-        return nullptr;
+    if (vblock->get_block_class() == base::enum_xvblock_class_full &&
+        base::xvblock_fork_t::is_block_match_version(vblock->get_block_version(), base::enum_xvblock_fork_version_unit_opt)) {
+        return vblock;
     }
     uint64_t current_height = vblock->get_height();
     while (current_height > 0) {
@@ -274,21 +275,26 @@ base::xauto_ptr<base::xvblock_t> xblocktool_t::get_latest_connectted_light_block
         if (prev_vblock == nullptr || prev_vblock->get_block_class() == base::enum_xvblock_class_light) {
             return prev_vblock;
         }
-        if (prev_vblock->get_block_class() == base::enum_xvblock_class_full) {
-            return nullptr;
+        if (prev_vblock->get_block_class() == base::enum_xvblock_class_full &&
+            base::xvblock_fork_t::is_block_match_version(prev_vblock->get_block_version(), base::enum_xvblock_fork_version_unit_opt)) {
+            return prev_vblock;
         }
         current_height = prev_vblock->get_height();
     }
     return nullptr;
 }
 
-base::xauto_ptr<base::xvblock_t> xblocktool_t::get_committed_lightunit(base::xvblockstore_t* blockstore, const std::string & account, uint64_t max_height) {
+base::xauto_ptr<base::xvblock_t> xblocktool_t::get_committed_state_changed_block(base::xvblockstore_t* blockstore, const std::string & account, uint64_t max_height) {
     base::xvaccount_t _vaccount(account);
     // there is mostly two empty units
     XMETRICS_GAUGE(metrics::blockstore_access_from_application, 1);
     base::xauto_ptr<base::xvblock_t> vblock = blockstore->load_block_object(_vaccount, max_height, base::enum_xvblock_flag_committed, false);
     xassert(vblock->check_block_flag(base::enum_xvblock_flag_committed));
     if (vblock->get_block_class() == base::enum_xvblock_class_light) {
+        return vblock;
+    }
+    if (vblock->get_block_class() == base::enum_xvblock_class_full &&
+        base::xvblock_fork_t::is_block_match_version(vblock->get_block_version(), base::enum_xvblock_fork_version_unit_opt)) {
         return vblock;
     }
 
@@ -299,6 +305,11 @@ base::xauto_ptr<base::xvblock_t> xblocktool_t::get_committed_lightunit(base::xvb
         if (prev_vblock == nullptr || prev_vblock->get_block_class() == base::enum_xvblock_class_light) {
             return prev_vblock;
         }
+        if (prev_vblock->get_block_class() == base::enum_xvblock_class_full &&
+            base::xvblock_fork_t::is_block_match_version(prev_vblock->get_block_version(), base::enum_xvblock_fork_version_unit_opt)) {
+            return prev_vblock;
+        }
+
         current_height = prev_vblock->get_height();
     }
     return nullptr;
@@ -442,31 +453,23 @@ xcons_transaction_ptr_t xblocktool_t::create_one_txreceipt(base::xvblock_t* comm
 
     // find txaction by receiptid
     std::vector<base::xvaction_t> receipt_actions;
-    auto & all_entitys = commit_block->get_input()->get_entitys();
-    for (auto & entity : all_entitys) {
-        // it must be xinentitys
-        base::xvinentity_t* _inentity = dynamic_cast<base::xvinentity_t*>(entity);
-        if (_inentity == nullptr) {
-            xassert(false);
-            return nullptr;
+    auto tx_actions = commit_block->get_tx_actions();
+    for (auto & action : tx_actions) {
+        if (action.get_org_tx_hash().empty()) {
+            continue;
         }
-        auto & all_actions = _inentity->get_actions();
-        for (auto & action : all_actions) {            
-            if (action.get_org_tx_hash().empty()) {
-                continue;
-            }
-            enum_transaction_subtype _actionid = (enum_transaction_subtype)action.get_org_tx_action_id();
-            if (_actionid != subtype) {
-                continue;                        
-            }
-            xlightunit_action_t txaction(action);
-            xinfo("nathan peer tableid:%d:%d, receiptid:%llu:%llu", peer_table_sid, txaction.get_receipt_id_peer_tableid(), receipt_id, txaction.get_receipt_id());
-            if (txaction.get_receipt_id_peer_tableid() != peer_table_sid || txaction.get_receipt_id() != receipt_id) {
-                continue;  
-            }
-            receipt_actions.push_back(action);
+        enum_transaction_subtype _actionid = (enum_transaction_subtype)action.get_org_tx_action_id();
+        if (_actionid != subtype) {
+            continue;                        
         }
+        xlightunit_action_t txaction(action);
+        xinfo("xblocktool_t::create_one_txreceipt peer tableid:%d:%d, receiptid:%llu:%llu", peer_table_sid, txaction.get_receipt_id_peer_tableid(), receipt_id, txaction.get_receipt_id());
+        if (txaction.get_receipt_id_peer_tableid() != peer_table_sid || txaction.get_receipt_id() != receipt_id) {
+            continue;  
+        }
+        receipt_actions.push_back(action);
     }
+
     if (receipt_actions.size() != 1) {  // not find txhash
         xassert(false);
         return nullptr;
@@ -518,6 +521,46 @@ base::xreceiptid_state_ptr_t xblocktool_t::get_receiptid_from_property_prove(con
 
     base::xreceiptid_state_ptr_t receiptid = xtable_bstate_t::make_receiptid_from_state(_temp_bstate.get());
     return receiptid;
+}
+
+bool xblocktool_t::check_lacking_unit_and_try_sync(const base::xvaccount_t & vaccount,
+                                                   const base::xaccount_index_t & commit_account_index,
+                                                   base::xvblockstore_t * blockstore,
+                                                   const std::string & caller) {
+    // firstly, load connected block, always sync unit from latest connected block
+    uint64_t latest_connect_height = blockstore->get_latest_connected_block_height(vaccount);
+    uint64_t latest_commit_height = commit_account_index.get_latest_unit_height();
+
+    if (latest_connect_height != latest_commit_height) {
+        xwarn("xblocktool_t::check_lacking_unit_and_try_sync connect block fall behind account=%s,index=%s,commit height=%ld,connect_height=%ld,caller:%s",
+              vaccount.get_account().c_str(),
+              commit_account_index.dump().c_str(),
+              latest_commit_height,
+              latest_connect_height,
+              caller.c_str());
+        if (latest_connect_height < latest_commit_height) {
+            if (latest_connect_height + 2 >= latest_commit_height) {
+                auto ret = blockstore->try_update_account_index(
+                    vaccount, latest_commit_height, commit_account_index.get_latest_unit_viewid(), (latest_connect_height + 2 == latest_commit_height));
+                if (ret) {
+                    xinfo("xblocktool_t::check_lacking_unit_and_try_sync update account index succ account=%s,index=%s,commit height=%ld,connect_height=%ld,caller:%s",
+                          vaccount.get_account().c_str(),
+                          commit_account_index.dump().c_str(),
+                          latest_commit_height,
+                          latest_connect_height,
+                          caller.c_str());
+                    return true;
+                }
+            }
+
+            uint64_t from_height = latest_connect_height + 1;
+            uint32_t sync_num = (uint32_t)(latest_commit_height - latest_connect_height);
+            mbus::xevent_behind_ptr_t ev = make_object_ptr<mbus::xevent_behind_on_demand_t>(vaccount.get_address(), from_height, sync_num, true, "account_state_fall_behind", true);
+            base::xvchain_t::instance().get_xevmbus()->push_event(ev);
+        }
+        return false;
+    }
+    return true;
 }
 
 NS_END2

@@ -6,6 +6,7 @@
 #include "xdata/xblock.h"
 #include "xdata/xtableblock.h"
 #include "xdata/xblocktool.h"
+#include "xdata/xblockbuild.h"
 #include "xdata/xcons_transaction.h"
 #include "xstore/xstore_face.h"
 #include "xblockmaker/xtable_builder.h"
@@ -26,7 +27,7 @@ class xdatamock_table : public base::xvaccount_t {
         enum_default_full_table_state_count = 2,
     };
  public:
-    explicit xdatamock_table(uint16_t tableid = 1, uint32_t user_count = 4)
+    explicit xdatamock_table(uint16_t tableid = 1, uint32_t user_count = 4, bool is_fixed = false)
     : base::xvaccount_t(xblocktool_t::make_address_shard_table_account(tableid)) {
         m_fulltable_builder = std::make_shared<xfulltable_builder_t>();
         m_lighttable_builder = std::make_shared<xlighttable_builder_t>();
@@ -34,17 +35,37 @@ class xdatamock_table : public base::xvaccount_t {
         xblock_ptr_t _block = build_genesis_table_block();
         on_table_finish(_block);
 
-        for (uint32_t i = 0; i < user_count; i++) {
-            xaddress_key_pair_t addr_pair = xdatamock_address::make_unit_address_with_key(tableid);
-            xdatamock_unit datamock_unit(addr_pair, xdatamock_unit::enum_default_init_balance);
-            m_mock_units.push_back(datamock_unit);
+        if (is_fixed) {
+            // two account is enough as reference block
+            {
+                xaddress_key_pair_t addr_pair;
+                addr_pair.m_address = send_account;
+                xdatamock_unit datamock_unit(addr_pair, xdatamock_unit::enum_default_init_balance);
+                m_mock_units.push_back(datamock_unit);
+            }
+            {
+                xaddress_key_pair_t addr_pair;
+                addr_pair.m_address = recv_account;
+                xdatamock_unit datamock_unit(addr_pair, xdatamock_unit::enum_default_init_balance);
+                m_mock_units.push_back(datamock_unit);
+            }
+        } else {
+            for (uint32_t i = 0; i < user_count; i++) {
+                xaddress_key_pair_t addr_pair = xdatamock_address::make_unit_address_with_key(tableid);
+                xdatamock_unit datamock_unit(addr_pair, xdatamock_unit::enum_default_init_balance);
+                m_mock_units.push_back(datamock_unit);
+            }
         }
         xassert(m_mock_units.size() == user_count);
     }
 
+    const std::string send_account{"T00000LZbJfje6hW6MmG43h6EaTkme3ZqggGoUvF"};
+    const std::string recv_account{"T00000LS5oCNzqoCFe5MTkGBJDyCHCM2wCkfFBLM"};
+
     void                                disable_fulltable() {m_config_fulltable_interval = 0;}
     const base::xvaccount_t &           get_vaccount() const {return *this;}
     const xtablestate_ptr_t &           get_table_state() const {return m_table_state;}
+    const xtablestate_ptr_t &           get_commit_table_state() const {return m_table_states.front();}
     const std::vector<xblock_ptr_t> &   get_history_tables() const {return m_history_tables;}
     const std::vector<xdatamock_unit> & get_mock_units() const {return m_mock_units;}    
     static uint32_t                     get_full_table_interval_count() {return enum_default_full_table_interval_count;}
@@ -96,19 +117,24 @@ class xdatamock_table : public base::xvaccount_t {
     void    push_txs(const std::vector<xcons_transaction_ptr_t> & txs) {        
         for (auto & tx : txs) {
             push_tx(tx);
+                xtransaction_ptr_t raw_tx_ptr;
+                auto raw_tx = tx->get_transaction();
+                raw_tx->add_ref();
+                raw_tx_ptr.attach(raw_tx);
+                m_raw_txs[tx->get_tx_hash()] = raw_tx_ptr;
         }
     }
     void    push_tx(const xcons_transaction_ptr_t & tx) {
         auto account_addr = tx->get_account_addr();
         for (auto & mockunit : m_mock_units) {
             if (account_addr == mockunit.get_account()) {
-                mockunit.push_tx(tx);
+                mockunit.push_tx(tx, m_raw_txs);
                 return;
             }
         }
         xdatamock_unit datamock_unit(account_addr, xdatamock_unit::enum_default_init_balance);
         m_mock_units.push_back(datamock_unit);
-        datamock_unit.push_tx(tx);
+        datamock_unit.push_tx(tx, m_raw_txs);
     }
     xblock_ptr_t    generate_one_table() {
         xblock_ptr_t block = generate_tableblock();
@@ -126,18 +152,19 @@ class xdatamock_table : public base::xvaccount_t {
         }
     }
 
-    xblock_consensus_para_t  init_consensus_para() {
+    xblock_consensus_para_t  init_consensus_para(uint64_t clock = 10000000) {
         xblock_consensus_para_t cs_para(xcertauth_util::instance().get_leader_xip(), get_cert_block().get());
         cs_para.update_latest_cert_block(get_cert_block());
         cs_para.update_latest_lock_block(get_lock_block());
         cs_para.update_latest_commit_block(get_commit_block());
         cs_para.set_tableblock_consensus_para(1,"1",1,"1");
+        cs_para.set_clock(clock);
         return cs_para;
     }
 
-    void    do_multi_sign(const xblock_ptr_t & proposal_block) {
+    void    do_multi_sign(const xblock_ptr_t & proposal_block, bool is_fixed = false) {
         if (proposal_block != nullptr) {
-            xcertauth_util::instance().do_multi_sign(proposal_block.get());
+            xcertauth_util::instance().do_multi_sign(proposal_block.get(), is_fixed);
         }        
     }
 
@@ -168,7 +195,6 @@ class xdatamock_table : public base::xvaccount_t {
         if (block->get_block_class() == base::enum_xvblock_class_light) {
             std::vector<xobject_ptr_t<base::xvblock_t>> sub_blocks;
             block->extract_sub_blocks(sub_blocks);
-            xassert(sub_blocks.size() > 0);
             for (auto & unit : sub_blocks) {
                 on_unit_finish(unit);
             }
@@ -223,6 +249,10 @@ class xdatamock_table : public base::xvaccount_t {
             }            
         }
         m_table_state = std::make_shared<xtable_bstate_t>(current_state.get());
+        m_table_states.push_back(m_table_state);
+        if (m_table_states.size() > 3) {
+            m_table_states.pop_front();
+        }
         return true;
     }
 
@@ -250,17 +280,28 @@ class xdatamock_table : public base::xvaccount_t {
         receiptid_state->clear_pair_modified();
 
         std::vector<xblock_ptr_t>   units;
+        std::vector<xlightunit_tx_info_ptr_t> txs_info;
         for (auto & mockunit : m_mock_units) {
             xblock_ptr_t unit = mockunit.generate_unit(receiptid_state, cs_para);
             if (unit != nullptr) {
                 units.push_back(unit);
             }
+            auto txs = mockunit.get_exec_txs();
+            // if (unit != nullptr && unit->get_block_class() == enum_xvblock_class_full) {
+            //     EXPECT_EQ(txs.size(), 1);
+            // }
+            for (auto & tx : txs) {
+                base::xvaction_t _action = data::make_action(tx);
+                xlightunit_tx_info_ptr_t txinfo = std::make_shared<xlightunit_tx_info_t>(_action, tx->get_transaction());
+                txs_info.push_back(txinfo);
+            }
+            mockunit.clear_exec_txs();
         }
         xassert(units.size() > 0);
 
         cs_para.set_justify_cert_hash(get_lock_block()->get_input_root_hash());
         cs_para.set_parent_height(0);
-        xblock_builder_para_ptr_t build_para = std::make_shared<xlighttable_builder_para_t>(units, m_default_resources);
+        xblock_builder_para_ptr_t build_para = std::make_shared<xlighttable_builder_para_t>(units, m_default_resources, txs_info);
         xblock_ptr_t proposal_block = m_lighttable_builder->build_block(get_cert_block(), m_table_state->get_bstate(), cs_para, build_para);
         return proposal_block;
     }
@@ -286,7 +327,9 @@ class xdatamock_table : public base::xvaccount_t {
     }
 
  private:
+    std::map<std::string, xtransaction_ptr_t> m_raw_txs;
     xtablestate_ptr_t               m_table_state{nullptr};
+    std::deque<xtablestate_ptr_t>   m_table_states;  // save cert/lock/commit table states
     std::vector<xblock_ptr_t>       m_history_tables;
     uint32_t                        m_last_generate_send_tx_user_index{0};
     std::vector<xdatamock_unit>     m_mock_units;

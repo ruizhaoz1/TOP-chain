@@ -33,7 +33,20 @@ class xdb_mem_t : public xdb_face_t {
     bool erase(const std::vector<std::string>& keys) override;
     bool batch_change(const std::map<std::string, std::string>& objs, const std::vector<std::string>& delete_keys) override;
 
-    xdb_transaction_t* begin_transaction() override;
+    //prefix must start from first char of key
+    bool read_range(const std::string& prefix, std::vector<std::string>& values) override;
+    //note:begin_key and end_key must has same style(first char of key)
+    bool delete_range(const std::string& begin_key,const std::string& end_key) override;
+    //key must be readonly(never update after PUT),otherwise the behavior is undefined
+    bool single_delete(const std::string& key) override;
+    
+    //iterator each key of prefix.note: go throuh whole db if prefix is empty
+    bool read_range(const std::string& prefix,xdb_iterator_callback callback,void * cookie) override;
+    //compact whole DB if both begin_key and end_key are empty
+    //note: begin_key and end_key must be at same CF while XDB configed by multiple CFs
+    bool compact_range(const std::string & begin_key,const std::string & end_key) override;
+    bool get_estimate_num_keys(uint64_t & num) const override;
+    
     xdb_meta_t  get_meta() override {return m_meta;}  // implement for test
  public:
     std::map<std::string, std::string> m_values;
